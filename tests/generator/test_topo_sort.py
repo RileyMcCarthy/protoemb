@@ -3,7 +3,7 @@ so nested children sized and declared ahead of their parents."""
 
 import generate as gen
 import pytest
-from protoemb_testkit import field, process, schema, struct, union
+from protoemb_testkit import field, process, schema, struct
 
 
 def test_referenced_struct_precedes_user():

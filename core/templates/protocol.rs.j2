@@ -700,13 +700,12 @@ mod tests {
     fn test_{{ name | snake_case }}_roundtrip() {
         #[allow(unused_mut)]
         let mut original = {{ name }}::default();
-        {%- for f in s.fields %}
-        {%- if f._min is not none and f._min != 0 and not f._is_enum and not f._is_string and not f._is_bool %}
-        // `{{ f.name | snake_case | rust_safe }}` is min-constrained (min={{ f._min | int }}); the Default 0 is below the
-        // packed field's representable range, so seed a valid in-range value.
+        {% for f in s.fields %}
+        {% if f._is_numeric and f._min is not none and (f._min > 0 or (f._max is not none and f._max < 0)) %}
+        // `{{ f.name | snake_case | rust_safe }}` is range-constrained to [{{ f._min }}, {{ f._max }}]: Default 0 is outside the packed range, so seed the in-range min.
         original.{{ f.name | snake_case | rust_safe }} = {% if f._is_float %}{{ f._min }}f32{% else %}{{ f._min | int }}{% endif %};
-        {%- endif %}
-        {%- endfor %}
+        {% endif %}
+        {% endfor %}
         let encoded = original.encode();
         assert_eq!(encoded.len(), {{ s._wire_size }});
         let decoded = {{ name }}::decode(&encoded).expect("decode failed");

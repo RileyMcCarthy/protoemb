@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Generate the non-MaD `thermostat` example in all three target languages and
+# Generate the `thermostat` example in all three target languages and
 # verify each compiles / typechecks / round-trips. Proves ProtoEmb is generic:
-# nothing about MaD leaks into the generator or runtime.
+# no consumer-specific assumptions leak into the generator or runtime.
 #
 # Requires: python3 (+ pyyaml, jinja2), a C compiler, rustc, and tsc on PATH.
 set -euo pipefail
@@ -62,5 +62,5 @@ fi
 
 echo ""
 echo "ALL TARGETS OK — ProtoEmb generated a complete, wire-conformant C/Rust/TS"
-echo "codec for a non-MaD protocol (custom prefix, multiple nodes, remap enum,"
+echo "codec for an independent protocol (custom prefix, multiple nodes, remap enum,"
 echo "nested structs, arrays, optional fields, tagged unions, packed + aligned)."

@@ -70,7 +70,6 @@ class Renderer:
         return self._scalar(lang, value)
 
     def array_value(self, lang, field, values):
-        et = field["type"]
         # element rendering reuses field_value with array-ness stripped
         elem = dict(field)
         elem["_is_array"] = False

@@ -1,0 +1,28 @@
+# Ruff config for the ProtoEmb Python generator. Lint-only (no `ruff format`
+# gate — black locally, not in CI). CI: `ruff check core tests`.
+target-version = "py39"
+line-length = 120
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle (PEP8)
+    "F",        # pyflakes (unused imports, undefined names)
+    "I",        # isort (import ordering)
+    "N",        # pep8-naming
+    "UP031",    # printf-style %-format -> f-string
+    "UP032",    # str.format() -> f-string
+    "PLC0415",  # import-outside-top-level (e.g. `import re` inside a function)
+    "S506",     # unsafe yaml load (bans yaml.load without SafeLoader)
+    "S101",     # assert used (assert-not-for-validation)
+    "D100",     # missing module docstring
+    "D101",     # missing class docstring
+    "D103",     # missing docstring in public function
+]
+
+[lint.pydocstyle]
+convention = "pep257"
+
+[lint.per-file-ignores]
+# Tests: asserts are the point; docstring rules stay relaxed; deferred
+# imports are used deliberately (e.g. optional toolchain probes).
+"tests/**/*.py" = ["S101", "D100", "D101", "D103", "PLC0415"]

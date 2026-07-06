@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "ProtoEmb runtime — generic serial client with priority queue, request/response orchestration, and NDJSON stdio bridge"
 license = "MIT"
-repository = "https://github.com/your-org/protoemb"
+repository = "https://github.com/RileyMcCarthy/protoemb"
 keywords = ["protocol", "embedded", "serial", "client", "wasm"]
 categories = ["embedded", "encoding", "wasm"]
 readme = "../README.md"
-# Flip to true (and set `repository`) to publish to crates.io.
+# Flip to true to publish to crates.io.
 publish = false
 
 [lib]

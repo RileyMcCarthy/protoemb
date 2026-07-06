@@ -132,7 +132,7 @@ pub fn build_write_frame(command: u8, data: &[u8]) -> Vec<u8> {
 //   READ:   [SYNC] [SRC] [0x00] [COMMAND]
 //   WRITE:  [SYNC] [SRC] [0x01] [COMMAND] [LEN_LO] [LEN_HI] [DATA...] [CRC8]
 //
-// Point-to-point links (e.g. MaD) leave addressing off and the frame is
+// Point-to-point links leave addressing off and the frame is
 // unchanged. The CRC still covers only the payload.
 
 /// Build an addressed READ frame: `[SYNC] [SRC] [TYPE=0x00] [COMMAND]`.

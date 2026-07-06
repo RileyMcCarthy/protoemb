@@ -3,7 +3,13 @@ one rule and asserts the diagnostic reaches stderr before SystemExit."""
 
 import pytest
 from protoemb_testkit import (
-    enum, field, message, schema, struct, union, validate,
+    enum,
+    field,
+    message,
+    schema,
+    struct,
+    union,
+    validate,
 )
 
 # A trivial payload struct for messages that need a request/response type.

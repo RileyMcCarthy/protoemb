@@ -1,7 +1,6 @@
 """Struct layout: packed bit offsets, aligned byte offsets, wire sizes,
 optional presence flags, fixed-count arrays, and nested-struct inlining."""
 
-import generate as gen
 import pytest
 from protoemb_testkit import enum, field, process, schema, struct
 

@@ -106,9 +106,8 @@ BUILDERS = {"c": build_run_c, "rs": build_run_rust, "ts": build_run_ts}
 def run_all(schema_path, prefix, vectors, work_dir):
     """Generate `schema` to all targets, build+run each available driver over
     `vectors`, and return {lang: [lines]} for the toolchains that exist."""
-    from render import Renderer  # local import: render imports `generate`
-
     import generate as gen
+    from render import Renderer  # local import: render imports `generate`
     renderer = Renderer(gen.load_yaml(schema_path), prefix)
     for target in ("c", "rs", "ts"):
         generate_codec(schema_path, prefix, target, work_dir)

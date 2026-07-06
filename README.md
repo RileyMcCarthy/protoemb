@@ -1,5 +1,8 @@
 # ProtoEmb
 
+[![CI](https://github.com/RileyMcCarthy/protoemb/actions/workflows/ci.yml/badge.svg)](https://github.com/RileyMcCarthy/protoemb/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A small, dependency-light **binary protocol toolchain for embedded systems**.
 Describe a protocol once in YAML; generate matching encode/decode code for
 **C, TypeScript, and Rust**, plus a host-side serial runtime. The same wire
@@ -19,9 +22,9 @@ schema.yaml ──► core/generate.py ──► C  (device firmware codec + run
 | Path | What |
 |---|---|
 | [`core/`](core/) | The code generator (`generate.py`) + Jinja `templates/` |
-| [`framing/`](framing/) | `protoemb-framing` crate — wire frame parser/builder + CRC |
+| [`framing/`](framing/) | `protoemb-framing` crate — wire frame parser/builder + CRC (zero dependencies) |
 | [`runtime/`](runtime/) | `protoemb-runtime` crate — serial `Client`, priority queue, NDJSON `StdioBridge`, WASM `WasmClient` |
-| [`examples/`](examples/) | A non-MaD `thermostat` protocol + `verify.sh` (generates & round-trips C/Rust/TS) |
+| [`examples/`](examples/) | An example `thermostat` protocol + `verify.sh` (generates & round-trips C/Rust/TS) |
 | [`tests/`](tests/) | Self-contained suite — generator unit tests + cross-language wire conformance (`make test`) |
 | [`docs/`](docs/) | [`wire-format.md`](docs/wire-format.md) — the frame + payload contract |
 
@@ -50,11 +53,38 @@ python3 core/generate.py --schema my.yaml --target rs --output gen/rs --template
 
 Generator deps: `pip install -r core/requirements.txt` (pyyaml, jinja2), or
 `pip install ./core` (see [`core/pyproject.toml`](core/pyproject.toml)) for a
-`protoemb-gen` CLI.
+`protoemb-gen` CLI. Generation is deterministic: the same schema + templates
+always produce byte-identical output (CI enforces this).
 
-The two Rust crates are workspace-free path crates today (`publish = false`);
-their `Cargo.toml`s carry crates.io-ready metadata so the library can be split
-out (e.g. `git subtree`) and published with a one-line change.
+## Using ProtoEmb in your project
+
+ProtoEmb is designed to be vendored as a **git submodule** and driven from your
+build:
+
+```bash
+git submodule add https://github.com/RileyMcCarthy/protoemb.git vendor/protoemb
+```
+
+- **Device (C)** — run `generate.py --target c` as a pre-build hook (e.g. a
+  PlatformIO `extra_scripts` hook) and compile the generated codec + runtime
+  with your firmware.
+- **Browser / Node (TypeScript)** — run `generate.py --target ts` from an npm
+  script; for browser serial, build the runtime to WebAssembly:
+  `wasm-pack build vendor/protoemb/runtime --target web` (the `WasmClient`
+  feeds on Web Serial bytes).
+- **Host (Rust)** — run `generate.py --target rs` (or wire up
+  [`core/cargo_build.py`](core/cargo_build.py) from a `build.rs`) and depend on
+  `protoemb-runtime` / `protoemb-framing` as path crates.
+- **Desktop bridge** — `cargo build --bin protoemb-bridge` (in `runtime/`)
+  builds the NDJSON stdin/stdout bridge for apps that keep protocol logic in a
+  child process. `PROTOEMB_BRIDGE_RESPONSE_TIMEOUT_MS` overrides its
+  request/response timeout.
+
+The two Rust crates are deliberately workspace-free path crates
+(`publish = false`); their `Cargo.toml`s carry crates.io-ready metadata so
+publishing later is a one-line change. A complete reference consumer — firmware
+C target, browser WASM target, and Rust SIL target generated from one schema —
+is the [MaD tensile tester](https://github.com/RileyMcCarthy/MaD).
 
 ## Verify
 
@@ -75,9 +105,10 @@ make test-conformance # C == Rust == TS wire conformance (vector-driven)
 make test-rust        # framing + runtime cargo tests
 ```
 
-It needs no part of the MaD monorepo, so the library stays testable once split
-out. See [`tests/README.md`](tests/README.md) for layout and how to add vectors.
+Toolchain: `python3`, `cc`, `cargo`; the TypeScript conformance leg needs
+`node` + `tsc` and skips gracefully when they're absent. See
+[`tests/README.md`](tests/README.md) for layout and how to add vectors.
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
