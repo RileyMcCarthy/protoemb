@@ -1,8 +1,7 @@
 # ProtoEmb test suite
 
-A self-contained test framework for the ProtoEmb toolchain. It runs without the
-surrounding MaD monorepo, so the library can be split out (`git subtree`) and
-keep testing itself. Three layers:
+A self-contained test framework for the ProtoEmb toolchain — no external
+fixtures or consumer repo needed. Three layers:
 
 | Layer | What it tests | How |
 |---|---|---|
@@ -22,8 +21,9 @@ make test-rust          # just the framing + runtime crate tests
 make verify             # the example round-trip script (examples/verify.sh)
 ```
 
-`make test` is also run in CI on any change under `Protocol/**`
-(see `.github/workflows/ci.yml`, job `protoemb-ci`).
+`make test` runs in this repo's CI on every push/PR (`.github/workflows/ci.yml`),
+and again in consumer repos that vendor ProtoEmb as a submodule (e.g. MaD's
+`protoemb-ci` job, where the real-schema generator test activates).
 
 ### Toolchains
 
