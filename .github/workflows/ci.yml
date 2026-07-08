@@ -103,3 +103,73 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run ruff
         run: pipx run ruff==0.14.11 check --output-format=github core tests
+
+  # Rust lint gate: clippy must be warning-free (-D warnings) on both path
+  # crates. protoemb is not a workspace, so each crate is linted via its own
+  # manifest. The runtime crate is linted for both native (serial + stdio
+  # bridge) and the browser wasm target. The wasm leg uses --lib only: that is
+  # exactly what wasm-pack compiles, and --all-targets can't apply there because
+  # the native-only protoemb-bridge bin is cfg'd out of the wasm build.
+  clippy:
+    name: clippy (-D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            framing
+            runtime
+      - name: Install libudev (serialport build dependency on Linux)
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - name: clippy framing (native)
+        run: cargo clippy --manifest-path framing/Cargo.toml --all-targets -- -D warnings
+      - name: clippy runtime (native)
+        run: cargo clippy --manifest-path runtime/Cargo.toml --all-targets -- -D warnings
+      - name: clippy runtime (wasm32)
+        run: cargo clippy --manifest-path runtime/Cargo.toml --target wasm32-unknown-unknown --lib -- -D warnings
+
+  # MSRV gate: both crates must build on the pinned rust-version (1.78). The
+  # floor is the committed Cargo.lock v4 format; see rust-version in each
+  # crate's Cargo.toml. Build only (matches the crates' contract).
+  msrv:
+    name: msrv (1.78)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            framing
+            runtime
+      - name: Install libudev (serialport build dependency on Linux)
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - name: build framing on MSRV
+        run: cargo build --manifest-path framing/Cargo.toml
+      - name: build runtime on MSRV
+        run: cargo build --manifest-path runtime/Cargo.toml
+
+  # Supply-chain gate. cargo-deny (advisories + licenses + bans + sources) runs
+  # per crate against the shared deny.toml at the repo root — protoemb is not a
+  # workspace, so the action is invoked once per manifest. pip-audit checks the
+  # code generator's Python dependencies for known CVEs.
+  supply-chain:
+    name: supply-chain (cargo-deny + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: cargo-deny (framing)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: framing/Cargo.toml
+      - name: cargo-deny (runtime)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: runtime/Cargo.toml
+      - name: pip-audit (code generator deps)
+        run: pipx run pip-audit -r core/requirements.txt
