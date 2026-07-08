@@ -193,7 +193,7 @@ impl StdioBridge {
                     }
                 }
             })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         // Drop our reader since the thread now owns stdin
         drop(reader);
@@ -412,7 +412,7 @@ impl StdioBridge {
     /// Emit a JSON event to the writer (stdout) as a single line.
     fn emit<W: Write>(&self, writer: &mut W, event: &EventJson) -> io::Result<()> {
         let json = serde_json::to_string(event)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         writeln!(writer, "{}", json)?;
         writer.flush()
     }

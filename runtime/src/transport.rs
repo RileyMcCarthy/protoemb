@@ -54,7 +54,7 @@ impl SerialTransport {
         let port = serialport::new(path, baud_rate)
             .timeout(Duration::from_millis(100))
             .open()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         log::info!("Opened serial port: {} @ {} baud", path, baud_rate);
 
@@ -86,7 +86,7 @@ impl Transport for SerialTransport {
         let t = timeout.unwrap_or(Duration::from_secs(3600));
         self.port
             .set_timeout(t)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 
     fn close(&mut self) -> io::Result<()> {
@@ -264,6 +264,12 @@ pub mod testing {
         pub tx: Vec<u8>,
         /// Data to be read by the client (incoming) — prepopulate before reads
         pub rx: VecDeque<u8>,
+    }
+
+    impl Default for MemoryTransport {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl MemoryTransport {
