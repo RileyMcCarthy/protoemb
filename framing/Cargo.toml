@@ -2,6 +2,10 @@
 name = "protoemb-framing"
 version = "0.1.0"
 edition = "2021"
+# MSRV. Floor is the committed Cargo.lock v4 format (stabilized in Rust 1.78);
+# the crate itself has no dependencies and builds far lower. Kept equal to the
+# runtime crate's MSRV for a single toolchain across the repo.
+rust-version = "1.78"
 description = "ProtoEmb protocol framing layer — shared wire format parser and builder"
 license = "MIT"
 repository = "https://github.com/RileyMcCarthy/protoemb"

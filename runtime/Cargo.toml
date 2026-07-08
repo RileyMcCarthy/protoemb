@@ -2,6 +2,10 @@
 name = "protoemb-runtime"
 version = "0.1.0"
 edition = "2021"
+# MSRV, validated empirically (cargo +1.78.0 build + test on both native and
+# the dependency tree). Floor is the committed Cargo.lock v4 format (Rust 1.78);
+# serde/serialport/wasm-bindgen and the io::Error::other usage all build there.
+rust-version = "1.78"
 description = "ProtoEmb runtime — generic serial client with priority queue, request/response orchestration, and NDJSON stdio bridge"
 license = "MIT"
 repository = "https://github.com/RileyMcCarthy/protoemb"
