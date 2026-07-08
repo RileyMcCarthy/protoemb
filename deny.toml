@@ -1,0 +1,85 @@
+# cargo-deny configuration for the protoemb Rust crates.
+#
+# protoemb is deliberately NOT a Cargo workspace: `framing/` and `runtime/` are
+# two independent path crates. This config is shared by both and is applied per
+# crate in CI via `cargo deny check --manifest-path <crate>/Cargo.toml`.
+#
+#   framing  -> zero dependencies (nothing but the crate itself).
+#   runtime  -> native deps (serialport, libc, serde/serde_json, log) plus
+#               wasm deps (wasm-bindgen, js-sys, serde-wasm-bindgen, ...).
+#
+# See https://embarkstudios.github.io/cargo-deny/ for the schema.
+
+[graph]
+# Evaluate the graph for every platform runtime actually targets: the three
+# native host triples that build the serial bridge, plus the browser wasm
+# target. This is what makes serialport's Linux-only transitive `unescaper`
+# (GPL-3.0) visible to the license check — see the exception below.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+]
+all-features = true
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Advisories: fail the build on any security vulnerability or unmaintained
+# crate in the tree (RustSec advisory-db). Yanked versions are also rejected.
+# ---------------------------------------------------------------------------
+[advisories]
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Licenses: allow only the permissive licenses that appear in the two crates'
+# dependency trees. The list below is exhaustive for the current lockfiles;
+# any new license (or a copyleft one) will fail the check until reviewed.
+# ---------------------------------------------------------------------------
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",   # mach2 (Apache-2.0 OR MIT OR BSD-2-Clause)
+    "MPL-2.0",        # serialport — file-level copyleft, fine to link
+    "Unicode-3.0",    # unicode-ident
+    "Unlicense",      # memchr (Unlicense OR MIT)
+]
+confidence-threshold = 0.8
+
+# `unescaper` is GPL-3.0. It is a *transitive, Linux-only* dependency of
+# serialport 4.9.0 (pulled in via the udev enumeration path; absent on macOS,
+# Windows, and wasm). serialport 4.9.0 is the latest 4.x, so this cannot be
+# dropped without changing the runtime dependency, which is out of scope for a
+# metadata-only hardening pass. Scope the GPL allowance to this one crate so
+# the global allow-list stays permissive and the exception is explicit.
+exceptions = [
+    { crate = "unescaper", allow = ["GPL-3.0"] },
+]
+
+[licenses.private]
+ignore = false
+
+# ---------------------------------------------------------------------------
+# Bans: don't hard-fail on duplicate versions (transitive graphs legitimately
+# carry a couple), but keep the section so it is easy to tighten later.
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+allow = []
+deny = []
+
+# ---------------------------------------------------------------------------
+# Sources: only the official crates.io registry is permitted; no git sources.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
