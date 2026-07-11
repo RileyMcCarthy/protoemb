@@ -26,7 +26,8 @@ def have(tool):
 
 
 def have_tsc():
-    return have("tsc") or have("npx")
+    # The TS leg runs via `npx` (pinned TypeScript), which ships with node.
+    return have("npx")
 
 
 def generate_codec(schema_path, prefix, target, out_dir):
@@ -89,10 +90,14 @@ def build_run_ts(work_dir, prefix_lower, driver_src):
     with open(src, "w") as f:
         f.write(driver_src)
     js_dir = os.path.join(work_dir, "js")
-    tsc = ["tsc"] if have("tsc") else ["npx", "--yes", "-p", "typescript", "tsc"]
+    # Pin TypeScript to the last 5.x line: TS 6.0 removed `moduleResolution node`
+    # (node10), so an unpinned global `tsc` breaks this leg whenever a runner
+    # pulls 6.x. npx fetches the pinned compiler regardless of what's installed
+    # globally, and `--ignoreDeprecations 5.0` silences node10's 5.x deprecation.
+    tsc = ["npx", "--yes", "-p", "typescript@5.9", "tsc"]
     _run(tsc + [
         "--target", "es2020", "--module", "commonjs", "--moduleResolution", "node",
-        "--strict", "--skipLibCheck", "--ignoreDeprecations", "6.0",
+        "--strict", "--skipLibCheck", "--ignoreDeprecations", "5.0",
         "--outDir", js_dir, src,
     ])
     return _run(["node", os.path.join(js_dir, "driver.js")]).splitlines()
