@@ -28,13 +28,13 @@ rustc --edition 2021 --test "$out/rs/thermostat.rs" -o "$out/rs/test_bin"
 "$out/rs/test_bin"
 
 echo "== TypeScript: tsc --noEmit typecheck =="
-# --ignoreDeprecations silences TS7.0's node10 moduleResolution deprecation error.
-tsc_flags=(--noEmit --strict --skipLibCheck --target es2020 --lib es2020,dom --ignoreDeprecations 6.0)
-if command -v tsc >/dev/null 2>&1; then
-  tsc "${tsc_flags[@]}" "$out/ts/thermostat.ts"
-else
-  npx --yes -p typescript tsc "${tsc_flags[@]}" "$out/ts/thermostat.ts"
-fi
+# Pin TypeScript to the last 5.x line via npx: TS 6.0 removed the `node10`
+# moduleResolution this leg uses, so an unpinned global `tsc` breaks whenever the
+# host has 6.x. Always go through npx so the compiler is deterministic; the
+# `--ignoreDeprecations 5.0` flags below silence node10's 5.x deprecation.
+tsc_bin() { npx --yes -p typescript@5.9 tsc "$@"; }
+tsc_flags=(--noEmit --strict --skipLibCheck --target es2020 --lib es2020,dom --ignoreDeprecations 5.0)
+tsc_bin "${tsc_flags[@]}" "$out/ts/thermostat.ts"
 echo "   ok"
 
 echo "== Conformance: C / Rust / TS must produce byte-identical wire output =="
@@ -49,8 +49,7 @@ rustc --edition 2021 "$out/rs/dump.rs" -o "$out/rs/dump" 2>/dev/null
 "$out/rs/dump" > "$out/rs.hex"
 
 cp "$here/conformance/dump.ts" "$out/ts/dump.ts"
-tsc_bin() { if command -v tsc >/dev/null 2>&1; then tsc "$@"; else npx --yes -p typescript tsc "$@"; fi; }
-tsc_bin --target es2020 --module commonjs --moduleResolution node --skipLibCheck --ignoreDeprecations 6.0 --outDir "$out/ts/js" "$out/ts/dump.ts"
+tsc_bin --target es2020 --module commonjs --moduleResolution node --skipLibCheck --ignoreDeprecations 5.0 --outDir "$out/ts/js" "$out/ts/dump.ts"
 node "$out/ts/js/dump.js" > "$out/ts.hex"
 
 if diff "$out/c.hex" "$out/rs.hex" >/dev/null && diff "$out/c.hex" "$out/ts.hex" >/dev/null; then

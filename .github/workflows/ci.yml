@@ -33,8 +33,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
-      - name: Install TypeScript (cross-language conformance leg)
-        run: npm install -g typescript
+      # No global TypeScript install: the conformance harness and verify.sh run
+      # a pinned `npx -p typescript@5.9 tsc` (TS 6.0 removed the flags this leg
+      # relies on), so the compiler is deterministic and independent of the host.
       - name: Install libudev (serialport build dependency on Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
