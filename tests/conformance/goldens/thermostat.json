@@ -1,0 +1,22 @@
+{
+  "datum_fan_auto": "e50000",
+  "datum_fan_high": "a40000",
+  "datum_fan_low": "620000",
+  "datum_fan_off": "210000",
+  "datum_humid": "d30d00",
+  "datum_temp_hi": "8f3801",
+  "datum_temp_lo": "000000",
+  "pkt_absent": "c54e2c0000000000",
+  "pkt_fault_false": "0000800000000000",
+  "pkt_full": "5f9ce41bb2909101",
+  "reading_max": "e22403",
+  "reading_mid": "766201",
+  "reading_min": "000000",
+  "reading_zero": "909101",
+  "sched_empty": "000000000000000000000000000000000000000000000000000000000000000000",
+  "sched_full": "6162636465666768696a6b6c6d6e6f000a0014001e00280032003c004600500001",
+  "sched_named": "7765656b6461790000000000000000000000640070fe5203c800ceffe80318fc01",
+  "zone_hi": "0fb938c9",
+  "zone_lo": "00000000",
+  "zone_mid": "29ad9d58"
+}

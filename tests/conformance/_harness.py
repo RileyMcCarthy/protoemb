@@ -125,10 +125,101 @@ def run_all(schema_path, prefix, vectors, work_dir):
 
 
 def pivot_by_label(outputs):
-    """{lang: [\"label hex\", ...]} -> {label: {lang: hex}}."""
+    """Map {lang: ['label hex', ...]} -> {label: {lang: hex}}."""
     by_label = {}
     for lang, lines in outputs.items():
         for ln in lines:
             label, hexstr = ln.split(" ", 1)
             by_label.setdefault(label, {})[lang] = hexstr
     return by_label
+
+
+# Languages the CI conformance gate expects when hard-require is on.
+REQUIRED_LANGS = frozenset({"c", "rs", "ts"})
+GOLDENS_DIR = os.path.join(os.path.dirname(__file__), "goldens")
+
+
+def require_all_langs_enabled():
+    """True when CI (or a local full gate) demands C + Rust + TypeScript."""
+    return os.environ.get("PROTOEMB_CONFORMANCE_REQUIRE_ALL", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def assert_language_coverage(outputs, *, min_langs=2):
+    """Assert enough toolchains ran for a meaningful conformance check.
+
+    Locally, a missing compiler still soft-skips that language (see builders).
+    On CI, set ``PROTOEMB_CONFORMANCE_REQUIRE_ALL=1`` so a missing or empty
+    TypeScript (or C/Rust) leg fails hard instead of greenwashing on C+RS alone.
+    """
+    got = set(outputs)
+    if require_all_langs_enabled():
+        missing = REQUIRED_LANGS - got
+        assert not missing, (
+            f"PROTOEMB_CONFORMANCE_REQUIRE_ALL is set: need languages "
+            f"{sorted(REQUIRED_LANGS)}, missing {sorted(missing)} "
+            f"(ran: {sorted(got)})"
+        )
+        for lang in sorted(REQUIRED_LANGS):
+            assert outputs[lang], f"{lang} produced empty stdout"
+    else:
+        assert len(got) >= min_langs, (
+            f"need >={min_langs} toolchains for conformance, ran: {sorted(got)}"
+        )
+
+
+def agreed_wire_by_label(outputs):
+    """Return {label: hex} only for labels where every language agrees.
+
+    Labels that diverge across languages are omitted (callers should already
+    fail the multi-lang assert separately).
+    """
+    agreed = {}
+    for label, per_lang in pivot_by_label(outputs).items():
+        values = set(per_lang.values())
+        if len(values) == 1:
+            agreed[label] = next(iter(values))
+    return agreed
+
+
+def assert_matches_goldens(outputs, suite_name):
+    """Lock agreed multi-lang wire hex against tests/conformance/goldens/<suite>.json.
+
+    Only labels present in the golden file are checked. Update goldens with::
+
+        PROTOEMB_UPDATE_GOLDENS=1 pytest tests/conformance/...
+    """
+    import json
+
+    path = os.path.join(GOLDENS_DIR, f"{suite_name}.json")
+    agreed = agreed_wire_by_label(outputs)
+    update = os.environ.get("PROTOEMB_UPDATE_GOLDENS", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    if update:
+        os.makedirs(GOLDENS_DIR, exist_ok=True)
+        # Merge: keep prior keys unless this run re-emits them with agreement.
+        prior = {}
+        if os.path.exists(path):
+            with open(path) as f:
+                prior = json.load(f)
+        prior.update(agreed)
+        with open(path, "w") as f:
+            json.dump(dict(sorted(prior.items())), f, indent=2)
+            f.write("\n")
+        return
+
+    assert os.path.exists(path), (
+        f"missing golden file {path}; generate with PROTOEMB_UPDATE_GOLDENS=1"
+    )
+    with open(path) as f:
+        expected = json.load(f)
+    mismatches = []
+    for label, want in sorted(expected.items()):
+        got = agreed.get(label)
+        if got is None:
+            mismatches.append(f"{label}: no multi-lang agreement (or missing from run)")
+        elif got != want:
+            mismatches.append(f"{label}: golden={want} got={got}")
+    assert not mismatches, "golden wire mismatch:\n" + "\n".join(mismatches)

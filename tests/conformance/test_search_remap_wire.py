@@ -10,7 +10,12 @@ values where the semantic value (e.g. 122) differs from the compact wire index.
 import os
 
 import pytest
-from _harness import pivot_by_label, run_all
+from _harness import (
+    assert_language_coverage,
+    assert_matches_goldens,
+    pivot_by_label,
+    run_all,
+)
 
 SCHEMA = os.path.join(os.path.dirname(__file__), "schemas", "search_remap.yaml")
 PREFIX = "Gcodes"
@@ -47,7 +52,7 @@ def test_uses_search_remap_style():
 
 
 def test_at_least_two_languages_available(outputs):
-    assert len(outputs) >= 2, f"need >=2 toolchains, ran: {sorted(outputs)}"
+    assert_language_coverage(outputs)
 
 
 def test_no_roundtrip_mismatch(outputs):
@@ -64,3 +69,7 @@ def test_wire_is_byte_identical_across_languages(outputs):
             mismatches.append(f"{label}: " + ", ".join(
                 f"{lg}={per_lang[lg]}" for lg in langs if lg in per_lang))
     assert not mismatches, "wire divergence:\n" + "\n".join(mismatches)
+
+
+def test_wire_matches_goldens(outputs):
+    assert_matches_goldens(outputs, "search_remap")

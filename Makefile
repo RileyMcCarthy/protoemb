@@ -18,11 +18,16 @@ PYTEST_FLAGS ?= -q
 # the node-driven TypeScript conformance leg.
 RUN_PYTEST = env -u ELECTRON_RUN_AS_NODE $(PYTEST) $(PYTEST_FLAGS)
 
-.PHONY: test test-generator test-conformance test-rust test-framing test-runtime \
-        verify setup clean
+.PHONY: test test-ci test-generator test-conformance test-rust test-framing \
+        test-runtime verify setup clean
 
-## Run the full suite.
+## Run the full suite (local: missing TS/C/Rust soft-skips that conformance leg).
 test: test-generator test-conformance test-rust
+
+## CI gate: same as `test` but hard-require C + Rust + TypeScript on conformance.
+## Sets PROTOEMB_CONFORMANCE_REQUIRE_ALL so a skipped TS leg fails the job.
+test-ci:
+	PROTOEMB_CONFORMANCE_REQUIRE_ALL=1 $(MAKE) test
 
 ## Install Python test dependencies (generator deps + pytest).
 setup:
