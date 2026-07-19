@@ -21,6 +21,8 @@ pub const NODE_{{ node | upper_snake }}: u8 = {{ loop.index0 }};
 {%- elif f._is_bool %}pack_bits({{ buf }}, {{ off }}, 1, if {{ val }} { 1 } else { 0 });
 {%- elif f._is_enum %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, {{ val }}.to_wire() as u32);
 {%- elif f._is_float %}{% if f._min is not none %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, (({{ val }} - ({{ f._min }}f32)) * {{ f._scale }}f32) as u32);{% else %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, ({{ val }} * {{ f._scale }}f32) as u32);{% endif %}
+{#- raw_storage: memory already holds scaled wire integer (mN/µm); match C packed path (val - min_wire). -#}
+{%- elif f._raw_storage %}{% if f._min_wire is not none %}{% if f._is_signed %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, (({{ val }} - ({{ f._min_wire }}i32)) as u32));{% else %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, {{ val }}.wrapping_sub({{ f._min_wire }}u32));{% endif %}{% else %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, {{ val }} as u32);{% endif %}
 {%- elif f._is_signed %}{% if f._min is not none %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, (({{ val }} - ({{ f._min | int }}i32)){% if f._has_scale %}.wrapping_mul({{ f._scale }}i32){% endif %}) as u32);{% else %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, ({{ val }}{% if f._has_scale %}.wrapping_mul({{ f._scale }}i32){% endif %}) as u32);{% endif %}
 {%- else %}{% if f._min is not none and f._min != 0 %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, ({{ val }}.wrapping_sub({{ f._min | int }}u32)){% if f._has_scale %}.wrapping_mul({{ f._scale }}u32){% endif %});{% else %}pack_bits({{ buf }}, {{ off }}, {{ f._elem_bits }}, {{ val }}{% if f._has_scale %}.wrapping_mul({{ f._scale }}u32){% endif %});{% endif %}
 {%- endif %}
@@ -52,6 +54,8 @@ pub const NODE_{{ node | upper_snake }}: u8 = {{ loop.index0 }};
 {%- elif f._is_bool %}unpack_bits(buf, {{ off }}, 1) != 0
 {%- elif f._is_enum %}{{ f.type }}::from_wire(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as u8).unwrap_or_default()
 {%- elif f._is_float %}{% if f._min is not none %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as f32) / {{ f._scale }}f32 + ({{ f._min }}f32){% else %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as f32) / {{ f._scale }}f32{% endif %}
+{#- raw_storage: restore scaled integer; match C packed path (wire + min_wire). -#}
+{%- elif f._raw_storage %}{% if f._min_wire is not none %}{% if f._is_signed %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as i32) + ({{ f._min_wire }}i32){% else %}unpack_bits(buf, {{ off }}, {{ f._elem_bits }}).wrapping_add({{ f._min_wire }}u32){% endif %}{% else %}{% if f._is_signed %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as i32){% else %}unpack_bits(buf, {{ off }}, {{ f._elem_bits }}){% endif %}{% endif %}
 {%- elif f._is_signed %}{% if f._min is not none %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as i32){% if f._has_scale %} / {{ f._scale }}i32{% endif %} + ({{ f._min | int }}i32){% else %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}) as i32){% if f._has_scale %} / {{ f._scale }}i32{% endif %}{% endif %}
 {%- else %}{% if f._min is not none and f._min != 0 %}(unpack_bits(buf, {{ off }}, {{ f._elem_bits }}){% if f._has_scale %} / {{ f._scale }}u32{% endif %}).wrapping_add({{ f._min | int }}u32){% else %}unpack_bits(buf, {{ off }}, {{ f._elem_bits }}){% if f._has_scale %} / {{ f._scale }}u32{% endif %}{% endif %}
 {%- endif %}
@@ -285,6 +289,16 @@ impl {{ name }} {
         {% else %}
         pack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}, (self.{{ f.name | snake_case | rust_safe }} * {{ f._scale }}f32) as u32);
         {% endif %}
+        {% elif f._raw_storage %}
+        {% if f._min_wire is not none %}
+        {% if f._is_signed %}
+        pack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}, ((self.{{ f.name | snake_case | rust_safe }} - ({{ f._min_wire }}i32)) as u32));
+        {% else %}
+        pack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}, self.{{ f.name | snake_case | rust_safe }}.wrapping_sub({{ f._min_wire }}u32));
+        {% endif %}
+        {% else %}
+        pack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}, self.{{ f.name | snake_case | rust_safe }} as u32);
+        {% endif %}
         {% elif f._is_signed %}
         {% if f._min is not none %}
         pack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}, ((self.{{ f.name | snake_case | rust_safe }} - ({{ f._min | int }}i32)){% if f._has_scale %}.wrapping_mul({{ f._scale }}i32){% endif %}) as u32);
@@ -321,6 +335,20 @@ impl {{ name }} {
             {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}) as f32) / {{ f._scale }}f32 + ({{ f._min }}f32),
             {% else %}
             {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}) as f32) / {{ f._scale }}f32,
+            {% endif %}
+            {% elif f._raw_storage %}
+            {% if f._min_wire is not none %}
+            {% if f._is_signed %}
+            {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}) as i32) + ({{ f._min_wire }}i32),
+            {% else %}
+            {{ f.name | snake_case | rust_safe }}: unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}).wrapping_add({{ f._min_wire }}u32),
+            {% endif %}
+            {% else %}
+            {% if f._is_signed %}
+            {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}) as i32),
+            {% else %}
+            {{ f.name | snake_case | rust_safe }}: unpack_bits(buf, base + {{ f._bit_offset }}, {{ f._bits }}),
+            {% endif %}
             {% endif %}
             {% elif f._is_signed %}
             {% if f._min is not none %}
@@ -368,6 +396,16 @@ impl {{ name }} {
         pack_bits(&mut buf, {{ f._bit_offset }}, {{ f._bits }}, ((self.{{ f.name | snake_case | rust_safe }} - ({{ f._min }}f32)) * {{ f._scale }}f32) as u32);
         {% else %}
         pack_bits(&mut buf, {{ f._bit_offset }}, {{ f._bits }}, (self.{{ f.name | snake_case | rust_safe }} * {{ f._scale }}f32) as u32);
+        {% endif %}
+        {% elif f._raw_storage %}
+        {% if f._min_wire is not none %}
+        {% if f._is_signed %}
+        pack_bits(&mut buf, {{ f._bit_offset }}, {{ f._bits }}, ((self.{{ f.name | snake_case | rust_safe }} - ({{ f._min_wire }}i32)) as u32));
+        {% else %}
+        pack_bits(&mut buf, {{ f._bit_offset }}, {{ f._bits }}, self.{{ f.name | snake_case | rust_safe }}.wrapping_sub({{ f._min_wire }}u32));
+        {% endif %}
+        {% else %}
+        pack_bits(&mut buf, {{ f._bit_offset }}, {{ f._bits }}, self.{{ f.name | snake_case | rust_safe }} as u32);
         {% endif %}
         {% elif f._is_signed %}
         {% if f._min is not none %}
@@ -486,6 +524,20 @@ impl {{ name }} {
             {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}) as f32) / {{ f._scale }}f32 + ({{ f._min }}f32),
             {% else %}
             {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}) as f32) / {{ f._scale }}f32,
+            {% endif %}
+            {% elif f._raw_storage %}
+            {% if f._min_wire is not none %}
+            {% if f._is_signed %}
+            {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}) as i32) + ({{ f._min_wire }}i32),
+            {% else %}
+            {{ f.name | snake_case | rust_safe }}: unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}).wrapping_add({{ f._min_wire }}u32),
+            {% endif %}
+            {% else %}
+            {% if f._is_signed %}
+            {{ f.name | snake_case | rust_safe }}: (unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}) as i32),
+            {% else %}
+            {{ f.name | snake_case | rust_safe }}: unpack_bits(buf, {{ f._bit_offset }}, {{ f._bits }}),
+            {% endif %}
             {% endif %}
             {% elif f._is_signed %}
             {% if f._min is not none %}

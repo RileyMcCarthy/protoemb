@@ -1,0 +1,35 @@
+# Packed + aligned raw_storage for cross-language wire identity.
+# Vector values use C/RS raw scaled integers (mN). TS render converts to
+# physical (A2). Wire formula: C/RS (raw - min_wire); TS (physical - min) * scale.
+prefix: RawDemo
+protocol_version: 1
+
+structs:
+  Sample:
+    encoding: packed
+    fields:
+      - name: force
+        type: int32
+        unit: N
+        scale: 1000
+        raw_storage: true
+        min: -100
+        max: 100
+      - name: position
+        type: int32
+        unit: mm
+        scale: 1000
+        raw_storage: true
+        min: -200
+        max: 200
+
+  AlignedRaw:
+    encoding: aligned
+    fields:
+      - name: force
+        type: int32
+        unit: N
+        scale: 1000
+        raw_storage: true
+        min: -100
+        max: 100

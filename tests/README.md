@@ -29,9 +29,11 @@ and again in consumer repos that vendor ProtoEmb as a submodule (e.g. MaD's
 
 - **generator**: `python3` + `pyyaml` + `jinja2` + `pytest`.
 - **conformance**: a C compiler (`cc`), `rustc`, and for the TypeScript leg
-  `tsc` (or `npx`) + `node`. A missing C/Rust/TS toolchain **skips** that
-  language rather than failing; conformance asserts only over the toolchains
-  that ran, and requires at least two.
+  `npx` + `node` (pinned `typescript@5.9` inside the harness). Locally, a
+  missing C/Rust/TS toolchain **skips** that language rather than failing;
+  conformance requires at least two. On CI, `make test-ci` sets
+  `PROTOEMB_CONFORMANCE_REQUIRE_ALL=1` so **all three** of C, Rust, and
+  TypeScript must produce non-empty wire output.
 
 > If you run tests from a VSCode/Electron integrated terminal and the TS leg
 > misbehaves, `ELECTRON_RUN_AS_NODE` has likely leaked into the environment. The
@@ -82,21 +84,22 @@ edits, all three languages update automatically:
 sparse **binary-search** remap path (the shape of MaD's real G-code enum) that
 the thermostat's small/dense `FanCmd` does not.
 
-### Known generator divergence (quarantined, not hidden)
+### Aligned scale lock-in
 
-The conformance suite surfaced a real generator inconsistency: in the **aligned**
-layout, the C and Rust codecs encode a numeric field with a raw byte copy that
-**ignores `scale`/`min`**, while the TS codec applies them. So an aligned field
-with a non-unit scale and a non-zero value produces different wire bytes in TS
-vs C/Rust. The thermostat's only such field is `Schedule.slots` (scale 10).
-
-These vectors are listed in `KNOWN_DIVERGENCES` in `test_thermostat_wire.py` and
-excluded from the strict cross-language assertion, while
-`test_known_aligned_scale_divergence_is_still_present` asserts they *do* still
-diverge — so if the generator's aligned path is fixed to apply scale/min like the
-packed path, that guard fails and tells you to drop the quarantine.
+Aligned fields with non-unit `scale` once diverged (C/Rust ignored scale; TS
+applied it). That path is fixed; `test_aligned_scaled_field_agrees_across_languages`
+and the `SCALED_ALIGNED_VECTORS` labels in `test_thermostat_wire.py` lock it in.
+There is **no** `KNOWN_DIVERGENCES` quarantine — new divergences must be fixed
+or `xfail`ed with an issue link, not silently dropped.
 
 (Separately: remap enums have a per-language *API* difference — Rust stores the
 wire-index variant, C/TS store the semantic value — but the **wire is
 conformant**. The drivers render each language's convention; see
 `render.py::ts_enum` / `c_enum`.)
+
+### Golden hex fixtures
+
+`tests/conformance/goldens/` holds expected wire hex for labels already proven
+byte-identical across C/Rust/TS. Tests assert against these after the multi-lang
+check. Update by re-running with `PROTOEMB_UPDATE_GOLDENS=1` (writes from the
+agreed multi-lang hex only — never from a single language).

@@ -67,6 +67,18 @@ class Renderer:
             if lang == "rs":
                 return f'"{value}".to_string()'
             return f'"{value}"'
+        # A2 dual memory model for raw_storage: vector tables always use the
+        # C/RS convention (already-scaled wire integers, e.g. mN). TypeScript
+        # keeps a physical-units API, so convert raw → physical for TS literals
+        # (value / scale) so all three encode to the same wire steps.
+        if (
+            lang == "ts"
+            and field.get("_raw_storage")
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+        ):
+            scale = field.get("_scale", 1) or 1
+            value = value / scale
         return self._scalar(lang, value)
 
     def array_value(self, lang, field, values):

@@ -15,7 +15,12 @@ structs, fixed arrays, strings, and optional present/absent.
 import os
 
 import pytest
-from _harness import pivot_by_label, run_all
+from _harness import (
+    assert_language_coverage,
+    assert_matches_goldens,
+    pivot_by_label,
+    run_all,
+)
 
 PROTOEMB_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 THERMOSTAT = os.path.join(PROTOEMB_ROOT, "examples", "thermostat.yaml")
@@ -83,10 +88,8 @@ def outputs(tmp_path_factory):
 
 
 def test_at_least_two_languages_available(outputs):
-    # Conformance is meaningless with one backend; require a cross-check.
-    assert len(outputs) >= 2, (
-        f"need >=2 toolchains for conformance, ran: {sorted(outputs)}"
-    )
+    # Locally: >=2 toolchains. On CI (PROTOEMB_CONFORMANCE_REQUIRE_ALL=1): C+RS+TS.
+    assert_language_coverage(outputs)
 
 
 def test_no_roundtrip_mismatch(outputs):
@@ -126,3 +129,8 @@ def test_aligned_scaled_field_agrees_across_languages(outputs):
         assert len(set(per_lang.values())) == 1, (
             f"{label} diverges: " + ", ".join(f"{lg}={h}" for lg, h in sorted(per_lang.items()))
         )
+
+
+def test_wire_matches_goldens(outputs):
+    """Regression lock: agreed multi-lang hex must match committed goldens."""
+    assert_matches_goldens(outputs, "thermostat")

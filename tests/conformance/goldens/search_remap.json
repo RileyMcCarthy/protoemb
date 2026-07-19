@@ -1,0 +1,12 @@
+{
+  "cmd_dwell": "823e",
+  "cmd_end": "8c37",
+  "cmd_home": "7317",
+  "cmd_move": "0100",
+  "cmd_rapid": "401f",
+  "pkt_gcode_end": "c8080000",
+  "pkt_gcode_rapid": "00000000",
+  "pkt_raw_max": "ffffff01",
+  "pkt_raw_mid": "2a736000",
+  "pkt_raw_zero": "01010000"
+}

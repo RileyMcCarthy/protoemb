@@ -42,13 +42,25 @@ time (`*_WIRE_SIZE`). Fields are laid out in declaration order.
 
 - **Integers** use the field's declared width (aligned) or a bit count derived
   from `min`/`max`×`scale`, or an explicit `bits:` (packed).
-- **`scale`** maps physical units to integer wire steps. In TS the codec
-  multiplies/divides by `scale`; in C/Rust the in-memory struct already holds
-  the scaled integer (so `scale` is applied by accessors / by the caller).
-  `raw_storage: true` makes this explicit and generates `set*/get*` helpers.
+- **`scale`** maps physical units to integer wire steps.
 - **`min`** shifts to offset-binary so the full bit range is usable for signed
-  or non-zero-based ranges.
+  or non-zero-based ranges. Wire offset uses `min_wire = min * scale` when
+  combined with scale.
 - A fractional `scale` is only valid on a `float` field.
+
+#### Memory models (scale / `raw_storage`)
+
+| Encoding | `raw_storage` | C | Rust | TypeScript |
+|---|---|---|---|---|
+| packed | false | physical; wire = `(v - min) * scale` | same | same |
+| packed | **true** | **raw** scaled int (mN/µm); wire = `v - min_wire` | **same as C** | **physical API (A2)**; wire = `(v - min) * scale` (matches C when `v_phys = raw/scale`) |
+| aligned | false | physical; wire applies `* scale` on LE store | same | same |
+| aligned | true | raw LE copy of scaled int | same | still applies `* scale` today (physical) — use raw ints carefully |
+
+`raw_storage: true` also generates C `set*/get*` accessors that convert physical
+↔ raw. Host TypeScript keeps physical units for ergonomics (product choice A2);
+firmware C and host Rust SIL use raw scaled integers so they share one memory
+model with the device.
 
 ### Enums
 
