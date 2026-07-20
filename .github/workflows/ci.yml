@@ -30,7 +30,7 @@ jobs:
           workspaces: |
             framing
             runtime
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
       # No global TypeScript install: the conformance harness and verify.sh run
