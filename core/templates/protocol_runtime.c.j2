@@ -126,6 +126,17 @@ static void {{ prefix }}_Runtime_applyWriteDisposition({{ prefix }}_Runtime_t *r
     }
 }
 
+{#-
+  Query dispatch must NOT pass the handler call and outSize in the same
+  argument list. The handler writes outSize through &outSize while a sibling
+  argument reads outSize, and C leaves function-argument evaluation order
+  unspecified with no sequence point between them (C11 6.5p2; MISRA C:2023
+  Rule 13.2). A compiler that evaluates the size argument first sends the
+  STALE value — observed as every file_download answering with a 0-byte DATA
+  frame on GCC/x86-64 while the same code worked under Clang/arm64. Hoisting
+  the call into a named local puts a sequence point between write and read on
+  every compiler.
+-#}
 static void {{ prefix }}_Runtime_applyQueryDisposition({{ prefix }}_Runtime_t *runtime,
                                                        uint8_t command,
                                                        {{ prefix }}_RuntimeQueryDisposition_E disposition,
@@ -206,11 +217,11 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
             (void)memset(&request, 0, sizeof(request));
             {{ prefix }}_{{ msg._request_name }}_decode(payload, &request);
 {% if msg._semantic == "query" %}
-            {{ prefix }}_Runtime_applyQueryDisposition(runtime,
-                                                      command,
-                                                      {{ prefix }}_onQuery_{{ msg._name }}(&request, outPayload, &outSize),
-                                                      outPayload,
-                                                      outSize);
+            {
+                const {{ prefix }}_RuntimeQueryDisposition_E disposition =
+                    {{ prefix }}_onQuery_{{ msg._name }}(&request, outPayload, &outSize);
+                {{ prefix }}_Runtime_applyQueryDisposition(runtime, command, disposition, outPayload, outSize);
+            }
 {% else %}
             {{ prefix }}_Runtime_applyWriteDisposition(runtime,
                                                       command,
@@ -219,11 +230,11 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
             break;
         }
 {% if msg._semantic == "query" %}
-        {{ prefix }}_Runtime_applyQueryDisposition(runtime,
-                                                  command,
-                                                  {{ prefix }}_onQueryRaw_{{ msg._name }}(payload, payloadSize, outPayload, &outSize),
-                                                  outPayload,
-                                                  outSize);
+        {
+            const {{ prefix }}_RuntimeQueryDisposition_E disposition =
+                {{ prefix }}_onQueryRaw_{{ msg._name }}(payload, payloadSize, outPayload, &outSize);
+            {{ prefix }}_Runtime_applyQueryDisposition(runtime, command, disposition, outPayload, outSize);
+        }
 {% else %}
         {{ prefix }}_Runtime_applyWriteDisposition(runtime,
                                                   command,
@@ -233,11 +244,11 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
         if (payloadSize >= 1U)
         {
 {% if msg._semantic == "query" %}
-            {{ prefix }}_Runtime_applyQueryDisposition(runtime,
-                                                      command,
-                                                      {{ prefix }}_onQuery_{{ msg._name }}(payload[0] != 0U, outPayload, &outSize),
-                                                      outPayload,
-                                                      outSize);
+            {
+                const {{ prefix }}_RuntimeQueryDisposition_E disposition =
+                    {{ prefix }}_onQuery_{{ msg._name }}(payload[0] != 0U, outPayload, &outSize);
+                {{ prefix }}_Runtime_applyQueryDisposition(runtime, command, disposition, outPayload, outSize);
+            }
 {% else %}
             {{ prefix }}_Runtime_applyWriteDisposition(runtime,
                                                       command,
@@ -252,11 +263,11 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
         if (payloadSize == 0U)
         {
 {% if msg._semantic == "query" %}
-            {{ prefix }}_Runtime_applyQueryDisposition(runtime,
-                                                      command,
-                                                      {{ prefix }}_onQuery_{{ msg._name }}(outPayload, &outSize),
-                                                      outPayload,
-                                                      outSize);
+            {
+                const {{ prefix }}_RuntimeQueryDisposition_E disposition =
+                    {{ prefix }}_onQuery_{{ msg._name }}(outPayload, &outSize);
+                {{ prefix }}_Runtime_applyQueryDisposition(runtime, command, disposition, outPayload, outSize);
+            }
 {% else %}
             {{ prefix }}_Runtime_applyWriteDisposition(runtime,
                                                       command,
@@ -269,11 +280,11 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
         }
 {% else %}
 {% if msg._semantic == "query" %}
-    {{ prefix }}_Runtime_applyQueryDisposition(runtime,
-                          command,
-                          {{ prefix }}_onQuery_{{ msg._name }}(payload, payloadSize, outPayload, &outSize),
-                          outPayload,
-                          outSize);
+    {
+        const {{ prefix }}_RuntimeQueryDisposition_E disposition =
+            {{ prefix }}_onQuery_{{ msg._name }}(payload, payloadSize, outPayload, &outSize);
+        {{ prefix }}_Runtime_applyQueryDisposition(runtime, command, disposition, outPayload, outSize);
+    }
 {% else %}
         {{ prefix }}_Runtime_applyWriteDisposition(runtime,
                                                   command,
