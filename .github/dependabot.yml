@@ -22,7 +22,12 @@ updates:
     open-pull-requests-limit: 5
 
   # GitHub Actions used by CI.
+  # Do not Dependabot-bump version tags of dtolnay/rust-toolchain: the MSRV
+  # job pins a real Rust version (e.g. @1.78.0), not an action release line.
+  # Other jobs use @stable. See closed PR #11 (invalid bump to 1.100.0).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
