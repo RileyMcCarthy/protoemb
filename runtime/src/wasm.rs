@@ -146,9 +146,15 @@ impl WasmClient {
         self.client.read(command, priority, coalesce_key);
     }
 
-    /// Enqueue a WRITE request (always high priority).
+    /// Enqueue a WRITE request (always high priority). Completes on ACK/NACK.
     pub fn write(&mut self, command: u8, data: &[u8]) {
         self.client.write(command, data);
+    }
+
+    /// Enqueue a query: a WRITE frame the device answers with DATA (or NACK),
+    /// e.g. a file-download chunk request. Always high priority.
+    pub fn query(&mut self, command: u8, data: &[u8]) {
+        self.client.query(command, data);
     }
 
     /// Register a command for periodic polling with ring-buffer storage.
