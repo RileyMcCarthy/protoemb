@@ -72,7 +72,8 @@ pub enum Event {
 /// Configuration for the client.
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
-    /// Timeout for pending responses.
+    /// Timeout for pending responses. A periodic read registered with
+    /// [`Client::register_periodic_with_timeout`] uses its own timeout instead.
     pub response_timeout: Duration,
 }
 
@@ -106,6 +107,8 @@ struct PendingRequest {
     frame: Vec<u8>,
     command: u8,
     sent_at: Instant,
+    /// How long to wait for the response before giving up on it.
+    timeout: Duration,
 }
 
 /// A periodic read registration.
@@ -118,6 +121,8 @@ struct PeriodicEntry {
     coalesce_key: String,
     /// Last time a read was enqueued.
     last_enqueued: Option<Instant>,
+    /// Response timeout for these reads; `None` uses the client's.
+    response_timeout: Option<Duration>,
 }
 
 impl Client {
@@ -150,6 +155,7 @@ impl Client {
             frame,
             priority,
             coalesce_key,
+            response_timeout: None,
         });
     }
 
@@ -162,6 +168,7 @@ impl Client {
             frame,
             priority: Priority::High,
             coalesce_key: None,
+            response_timeout: None,
         });
     }
 
@@ -208,7 +215,7 @@ impl Client {
 
         // ── 2. Check for response timeout ──
         if let Some(ref pending) = self.pending {
-            if pending.sent_at.elapsed() >= self.config.response_timeout {
+            if pending.sent_at.elapsed() >= pending.timeout {
                 let frame = pending.frame.clone();
                 log::warn!("Response timeout — clearing pending flag");
                 self.pending = None;
@@ -299,6 +306,7 @@ impl Client {
                         frame: msg.frame,
                         command,
                         sent_at: Instant::now(),
+                        timeout: msg.response_timeout.unwrap_or(self.config.response_timeout),
                     });
                 }
                 Err(e) => {
@@ -342,7 +350,39 @@ impl Client {
     /// at the given interval, with coalescing to avoid queue buildup.
     /// Incoming DATA responses are stored in a ring buffer of `storage_count`
     /// entries, queryable via [`Client::store`].
+    ///
+    /// The reads wait the client's [`ClientConfig::response_timeout`] for a
+    /// response; use [`Client::register_periodic_with_timeout`] to wait less.
     pub fn register_periodic(&mut self, command: u8, interval: Duration, storage_count: usize) {
+        self.add_periodic(command, interval, storage_count, None);
+    }
+
+    /// Like [`Client::register_periodic`], but each read gives up after
+    /// `response_timeout` instead of the client's (usually much longer) one.
+    ///
+    /// The link is stop-and-wait, so a read the device never answers blocks
+    /// every other request until it times out. A short timeout on frequent
+    /// reads turns one lost exchange into a short gap; writes and on-demand
+    /// reads keep the client's timeout, so a slow write is not cut short.
+    /// Keep `response_timeout` above the device's worst reply latency, and
+    /// above its partial-frame timeout so a resend lands on a reset parser.
+    pub fn register_periodic_with_timeout(
+        &mut self,
+        command: u8,
+        interval: Duration,
+        storage_count: usize,
+        response_timeout: Duration,
+    ) {
+        self.add_periodic(command, interval, storage_count, Some(response_timeout));
+    }
+
+    fn add_periodic(
+        &mut self,
+        command: u8,
+        interval: Duration,
+        storage_count: usize,
+        response_timeout: Option<Duration>,
+    ) {
         // Remove any existing registration for this command
         self.periodic.retain(|e| e.command != command);
 
@@ -352,6 +392,7 @@ impl Client {
             interval,
             coalesce_key,
             last_enqueued: None,
+            response_timeout,
         });
 
         // Register storage
@@ -381,6 +422,7 @@ impl Client {
                     frame,
                     priority: Priority::Low,
                     coalesce_key: Some(entry.coalesce_key.clone()),
+                    response_timeout: entry.response_timeout,
                 });
             }
         }
@@ -543,6 +585,68 @@ mod tests {
         let event = client.handle_frame(ParsedFrame::Ack(0x07));
         assert!(matches!(event, Event::Ack { command: 0x07 }));
         assert!(!client.is_pending());
+    }
+
+    fn timeout_command(events: &[Event]) -> Option<u8> {
+        events.iter().find_map(|e| match e {
+            Event::Timeout { frame } => frame.get(2).copied(),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_lost_periodic_read_times_out_on_its_own_timeout_and_is_resent() {
+        // The device never answers: the read gives up after the periodic
+        // timeout (not the 2 s client default) and the next read goes out in
+        // the same poll, so one lost exchange costs one short timeout.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.register_periodic_with_timeout(0, Duration::from_millis(10), 10, Duration::from_millis(30));
+
+        let events = client.poll();
+        assert!(client.is_pending());
+        assert_eq!(timeout_command(&events), None);
+
+        std::thread::sleep(Duration::from_millis(40));
+        let events = client.poll();
+        assert_eq!(timeout_command(&events), Some(0), "events: {:?}", events);
+        assert!(client.is_pending(), "the next periodic read should be on the wire");
+    }
+
+    #[test]
+    fn test_write_keeps_client_timeout_when_periodic_reads_use_a_short_one() {
+        // A write to the same command ID as the periodic read (MaD aliases
+        // READ_SAMPLE and WRITE_MACHINE_CONFIGURATION on 0) still waits the
+        // client timeout: the short timeout belongs to the periodic message,
+        // not to the command ID.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.register_periodic_with_timeout(0, Duration::from_millis(10), 10, Duration::from_millis(30));
+        client.write(0, &[0xAA]);
+
+        let _ = client.poll(); // HIGH write goes out ahead of the LOW periodic read
+        assert!(client.is_pending());
+
+        std::thread::sleep(Duration::from_millis(60));
+        let events = client.poll();
+        assert_eq!(timeout_command(&events), None, "events: {:?}", events);
+        assert!(client.is_pending());
+
+        let event = client.handle_frame(ParsedFrame::Ack(0));
+        assert!(matches!(event, Event::Ack { command: 0 }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_register_periodic_without_timeout_uses_client_timeout() {
+        let config = ClientConfig {
+            response_timeout: Duration::from_millis(30),
+        };
+        let mut client = Client::with_config(Box::new(MemoryTransport::new()), config);
+        client.register_periodic(1, Duration::from_millis(10), 10);
+
+        let _ = client.poll();
+        std::thread::sleep(Duration::from_millis(40));
+        let events = client.poll();
+        assert_eq!(timeout_command(&events), Some(1), "events: {:?}", events);
     }
 
     #[test]
