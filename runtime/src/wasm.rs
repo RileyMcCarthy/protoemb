@@ -157,6 +157,24 @@ impl WasmClient {
             .register_periodic(command, Duration::from_millis(interval_ms as u64), storage_count);
     }
 
+    /// Register a command for periodic polling whose reads give up after
+    /// `response_timeout_ms` instead of the client's timeout, so one lost
+    /// exchange stalls the link only that long. Writes keep the client's.
+    pub fn register_periodic_with_timeout(
+        &mut self,
+        command: u8,
+        interval_ms: u32,
+        storage_count: usize,
+        response_timeout_ms: u32,
+    ) {
+        self.client.register_periodic_with_timeout(
+            command,
+            Duration::from_millis(interval_ms as u64),
+            storage_count,
+            Duration::from_millis(response_timeout_ms as u64),
+        );
+    }
+
     /// Stop periodic polling for a command.
     pub fn unregister_periodic(&mut self, command: u8) {
         self.client.unregister_periodic(command);

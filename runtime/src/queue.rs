@@ -10,6 +10,7 @@
 //! serial link is slower than the polling rate.
 
 use std::collections::VecDeque;
+use std::time::Duration;
 
 /// Priority level for an outgoing message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +31,11 @@ pub struct QueuedMessage {
     /// Optional coalesce key. When set, only one message with this key
     /// can exist in the queue at a time — new ones replace the old.
     pub coalesce_key: Option<String>,
+    /// How long to wait for this message's response once it is on the wire.
+    /// `None` uses the client's [`ClientConfig::response_timeout`].
+    ///
+    /// [`ClientConfig::response_timeout`]: crate::client::ClientConfig::response_timeout
+    pub response_timeout: Option<Duration>,
 }
 
 /// Two-level priority queue with coalescing support.
@@ -112,6 +118,7 @@ mod tests {
             frame: frame.to_vec(),
             priority,
             coalesce_key: key.map(String::from),
+            response_timeout: None,
         }
     }
 
