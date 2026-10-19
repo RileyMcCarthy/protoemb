@@ -15,6 +15,7 @@
 //! {"cmd": "read", "command": 2, "priority": "high"}
 //! {"cmd": "write", "command": 1, "data": [1]}
 //! {"cmd": "write", "command": 4, "data": [0,0,...]}
+//! {"cmd": "query", "command": 9, "data": [1,2,3]}
 //! {"cmd": "register_periodic", "command": 0, "interval_ms": 100, "storage_count": 100}
 //! {"cmd": "unregister_periodic", "command": 0}
 //! {"cmd": "get_stored", "command": 0}
@@ -63,6 +64,11 @@ pub enum Request {
         coalesce_key: Option<String>,
     },
     Write {
+        command: u8,
+        data: Vec<u8>,
+    },
+    /// A WRITE frame the device answers with DATA (or NACK).
+    Query {
         command: u8,
         data: Vec<u8>,
     },
@@ -321,6 +327,17 @@ impl StdioBridge {
                 }
             }
 
+            Request::Query { command, data } => {
+                if let Some(ref mut client) = self.client {
+                    client.query(command, &data);
+                    vec![]
+                } else {
+                    vec![EventJson::Error {
+                        message: "Not connected".to_string(),
+                    }]
+                }
+            }
+
             Request::ListPorts => {
                 match serialport::available_ports() {
                     Ok(ports) => {
@@ -441,6 +458,10 @@ mod tests {
         let json = r#"{"cmd": "write", "command": 4, "data": [1, 2, 3]}"#;
         let req: Request = serde_json::from_str(json).unwrap();
         assert!(matches!(req, Request::Write { .. }));
+
+        let json = r#"{"cmd": "query", "command": 9, "data": [1, 2, 3]}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert!(matches!(req, Request::Query { command: 9, .. }));
 
         let json = r#"{"cmd": "list_ports"}"#;
         let req: Request = serde_json::from_str(json).unwrap();

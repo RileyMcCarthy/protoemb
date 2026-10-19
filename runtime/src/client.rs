@@ -4,7 +4,8 @@
 //! 1. Accept read/write requests into a [`PriorityQueue`]
 //! 2. Send one message at a time on the wire
 //! 3. Parse incoming bytes via [`FrameParser`]
-//! 4. Match responses to the pending request
+//! 4. Match responses to the pending request by command **and** reply kind
+//!    (READ and query expect DATA, WRITE expects ACK, NACK ends any of them)
 //! 5. Emit parsed events via a callback
 //!
 //! The client runs a **single-threaded poll loop** — call [`Client::poll`]
@@ -25,7 +26,7 @@ use web_time::Instant;
 
 use protoemb_framing::{self, build_read_frame, build_write_frame, FrameParser, ParsedFrame};
 
-use crate::queue::{Priority, PriorityQueue, QueuedMessage};
+use crate::queue::{ExpectedReply, Priority, PriorityQueue, QueuedMessage};
 use crate::storage::DataStore;
 use crate::transport::Transport;
 
@@ -109,6 +110,8 @@ struct PendingRequest {
     sent_at: Instant,
     /// How long to wait for the response before giving up on it.
     timeout: Duration,
+    /// The reply kind that completes this request (a NACK completes any).
+    expect: ExpectedReply,
 }
 
 /// A periodic read registration.
@@ -156,19 +159,37 @@ impl Client {
             priority,
             coalesce_key,
             response_timeout: None,
+            expect: ExpectedReply::Data,
         });
     }
 
     /// Enqueue a WRITE request for the given command ID with payload data.
     ///
-    /// Writes are always HIGH priority.
+    /// Writes are always HIGH priority. The write completes on a matching
+    /// ACK or NACK; a DATA frame for the same command does not complete it
+    /// (it is a late reply to an earlier read). For a WRITE frame the device
+    /// answers with DATA, use [`Client::query`].
     pub fn write(&mut self, command: u8, data: &[u8]) {
+        self.push_write(command, data, ExpectedReply::Ack);
+    }
+
+    /// Enqueue a query: a WRITE frame carrying a request payload that the
+    /// device answers with DATA (or NACK), e.g. a chunked file download.
+    ///
+    /// Queries are HIGH priority like writes, and complete on a matching DATA
+    /// or NACK. A matching ACK does not complete a query.
+    pub fn query(&mut self, command: u8, data: &[u8]) {
+        self.push_write(command, data, ExpectedReply::Data);
+    }
+
+    fn push_write(&mut self, command: u8, data: &[u8], expect: ExpectedReply) {
         let frame = build_write_frame(command, data);
         self.queue.push(QueuedMessage {
             frame,
             priority: Priority::High,
             coalesce_key: None,
             response_timeout: None,
+            expect,
         });
     }
 
@@ -233,15 +254,29 @@ impl Client {
     }
 
     /// Handle a parsed frame, match it to the pending request, and emit an event.
+    ///
+    /// A reply clears `pending` only when both its command and its kind fit
+    /// the in-flight request: DATA completes a READ or query, ACK completes a
+    /// WRITE, and NACK completes any of them. A DATA with the right command
+    /// but the wrong kind (a late reply to a timed-out read on a command ID
+    /// that is also written) is handled like a late DATA for another command.
     fn handle_frame(&mut self, frame: ParsedFrame) -> Event {
         match frame {
             ParsedFrame::Ack(cmd) => {
-                if let Some(expected) = self.pending.as_ref().map(|p| p.command) {
+                if let Some((expected, expect)) = self.pending.as_ref().map(|p| (p.command, p.expect)) {
                     if expected != cmd {
                         return Event::Error {
                             message: format!(
                                 "Mismatched ACK command: expected {}, got {}",
                                 expected, cmd
+                            ),
+                        };
+                    }
+                    if expect != ExpectedReply::Ack {
+                        return Event::Error {
+                            message: format!(
+                                "Unexpected ACK for command {}: awaiting DATA",
+                                cmd
                             ),
                         };
                     }
@@ -259,25 +294,33 @@ impl Client {
                             ),
                         };
                     }
+                    // A NACK ends a READ, WRITE or query alike: the device
+                    // rejected the request, so no other reply is coming.
                     self.pending = None;
                 }
                 Event::Nack { command: cmd }
             }
             ParsedFrame::Data { command, payload } => {
                 if let Some(ref pending_req) = self.pending {
-                    if pending_req.command != command {
+                    let completes =
+                        pending_req.command == command && pending_req.expect == ExpectedReply::Data;
+                    if !completes {
                         // Usually a late periodic DATA after we timed out the prior read and
-                        // advanced the queue — still useful for registered ring buffers.
+                        // advanced the queue — still useful for registered ring buffers. That
+                        // includes a WRITE on the same command ID, which waits for its ACK.
                         if self.store.is_registered(command) {
                             self.store.store(command, payload.clone());
                             return Event::Data { command, payload };
                         }
-                        return Event::Error {
-                            message: format!(
+                        let message = if pending_req.command != command {
+                            format!(
                                 "Mismatched DATA command: expected {}, got {}",
                                 pending_req.command, command
-                            ),
+                            )
+                        } else {
+                            format!("Unexpected DATA for command {}: awaiting ACK", command)
                         };
+                        return Event::Error { message };
                     }
                     self.pending = None;
                 }
@@ -307,6 +350,7 @@ impl Client {
                         command,
                         sent_at: Instant::now(),
                         timeout: msg.response_timeout.unwrap_or(self.config.response_timeout),
+                        expect: msg.expect,
                     });
                 }
                 Err(e) => {
@@ -423,6 +467,7 @@ impl Client {
                     priority: Priority::Low,
                     coalesce_key: Some(entry.coalesce_key.clone()),
                     response_timeout: entry.response_timeout,
+                    expect: ExpectedReply::Data,
                 });
             }
         }
@@ -585,6 +630,158 @@ mod tests {
         let event = client.handle_frame(ParsedFrame::Ack(0x07));
         assert!(matches!(event, Event::Ack { command: 0x07 }));
         assert!(!client.is_pending());
+    }
+
+    // ── Reply kind must match the in-flight request (#30) ──
+
+    /// Put one request on the wire and return the client with it pending.
+    fn client_with_pending(enqueue: impl FnOnce(&mut Client)) -> Client {
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        enqueue(&mut client);
+        let _ = client.poll();
+        assert!(client.is_pending());
+        client
+    }
+
+    #[test]
+    fn test_query_completes_on_matching_data() {
+        let mut client = client_with_pending(|c| c.query(9, &[0x01, 0x02]));
+
+        let event = client.handle_frame(ParsedFrame::Data {
+            command: 9,
+            payload: vec![0xAB],
+        });
+        assert!(matches!(event, Event::Data { command: 9, ref payload } if *payload == vec![0xAB]));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_query_completes_on_matching_nack() {
+        let mut client = client_with_pending(|c| c.query(9, &[0x01]));
+
+        let event = client.handle_frame(ParsedFrame::Nack(9));
+        assert!(matches!(event, Event::Nack { command: 9 }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_query_is_not_completed_by_ack() {
+        let mut client = client_with_pending(|c| c.query(9, &[0x01]));
+
+        let event = client.handle_frame(ParsedFrame::Ack(9));
+        assert!(matches!(event, Event::Error { .. }), "event: {:?}", event);
+        assert!(client.is_pending());
+    }
+
+    #[test]
+    fn test_query_is_sent_as_a_write_frame() {
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.query(9, &[0x01]);
+        let _ = client.poll();
+        let frame = client.pending.as_ref().map(|p| p.frame.clone()).unwrap();
+        assert_eq!(frame, build_write_frame(9, &[0x01]));
+    }
+
+    #[test]
+    fn test_write_completes_on_matching_nack() {
+        let mut client = client_with_pending(|c| c.write(0x07, &[0x01]));
+
+        let event = client.handle_frame(ParsedFrame::Nack(0x07));
+        assert!(matches!(event, Event::Nack { command: 0x07 }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_write_is_not_completed_by_matching_data() {
+        // No storage registered for the command: the DATA is reported as an
+        // error and the write keeps waiting for its ACK.
+        let mut client = client_with_pending(|c| c.write(0, &[0xAA]));
+
+        let event = client.handle_frame(ParsedFrame::Data {
+            command: 0,
+            payload: vec![1],
+        });
+        assert!(matches!(event, Event::Error { .. }), "event: {:?}", event);
+        assert!(client.is_pending());
+
+        let event = client.handle_frame(ParsedFrame::Ack(0));
+        assert!(matches!(event, Event::Ack { command: 0 }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_late_data_after_timed_out_read_does_not_clear_pending_write_on_same_command() {
+        // The issue's failure mode: a periodic READ on command 0 times out, a
+        // WRITE to command 0 goes out, and the late DATA for the READ arrives.
+        // The DATA is stored (command 0 has a ring buffer) but the write stays
+        // pending until its own ACK.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.register_periodic_with_timeout(0, Duration::from_secs(60), 10, Duration::from_millis(30));
+
+        let _ = client.poll(); // periodic READ 0 on the wire
+        assert!(client.is_pending());
+        client.write(0, &[0xAA]);
+
+        std::thread::sleep(Duration::from_millis(40));
+        let events = client.poll(); // READ times out; the WRITE goes out
+        assert_eq!(timeout_command(&events), Some(0), "events: {:?}", events);
+        assert!(client.is_pending());
+        assert_eq!(
+            client.pending.as_ref().map(|p| p.frame.clone()),
+            Some(build_write_frame(0, &[0xAA]))
+        );
+
+        let event = client.handle_frame(ParsedFrame::Data {
+            command: 0,
+            payload: vec![0x11, 0x22],
+        });
+        assert!(matches!(event, Event::Data { command: 0, .. }), "event: {:?}", event);
+        assert_eq!(client.store().latest(0).unwrap(), &vec![0x11, 0x22]);
+        assert!(client.is_pending(), "late DATA must not clear the pending WRITE");
+
+        let event = client.handle_frame(ParsedFrame::Ack(0));
+        assert!(matches!(event, Event::Ack { command: 0 }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_read_completes_on_matching_data() {
+        let mut client = client_with_pending(|c| c.read(0x02, Priority::High, None));
+
+        let event = client.handle_frame(ParsedFrame::Data {
+            command: 0x02,
+            payload: vec![7],
+        });
+        assert!(matches!(event, Event::Data { command: 0x02, .. }));
+        assert!(!client.is_pending());
+    }
+
+    #[test]
+    fn test_nacked_read_clears_pending_and_the_next_request_goes_out() {
+        // A READ expects DATA, but a NACK (device rejected the read) must still
+        // end it rather than leave the link stalled until the timeout.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.read(0x02, Priority::High, None);
+        client.read(0x03, Priority::High, None);
+        let _ = client.poll();
+        assert!(client.is_pending());
+
+        let event = client.handle_frame(ParsedFrame::Nack(0x02));
+        assert!(matches!(event, Event::Nack { command: 0x02 }));
+        assert!(!client.is_pending());
+
+        let events = client.poll();
+        assert!(events.is_empty(), "events: {:?}", events);
+        assert_eq!(client.pending.as_ref().map(|p| p.command), Some(0x03));
+    }
+
+    #[test]
+    fn test_read_is_not_completed_by_ack() {
+        let mut client = client_with_pending(|c| c.read(0x02, Priority::High, None));
+
+        let event = client.handle_frame(ParsedFrame::Ack(0x02));
+        assert!(matches!(event, Event::Error { .. }), "event: {:?}", event);
+        assert!(client.is_pending());
     }
 
     fn timeout_command(events: &[Event]) -> Option<u8> {

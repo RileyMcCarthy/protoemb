@@ -21,6 +21,20 @@ pub enum Priority {
     Low,
 }
 
+/// The reply that completes a request. A NACK completes any request: the
+/// device rejected it, so nothing else is coming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedReply {
+    /// READ frames and WRITE-frame queries ([`Client::query`]) are answered with DATA.
+    ///
+    /// [`Client::query`]: crate::client::Client::query
+    Data,
+    /// Plain WRITE frames ([`Client::write`]) are answered with ACK.
+    ///
+    /// [`Client::write`]: crate::client::Client::write
+    Ack,
+}
+
 /// A message waiting to be sent on the wire.
 #[derive(Debug, Clone)]
 pub struct QueuedMessage {
@@ -36,6 +50,8 @@ pub struct QueuedMessage {
     ///
     /// [`ClientConfig::response_timeout`]: crate::client::ClientConfig::response_timeout
     pub response_timeout: Option<Duration>,
+    /// The reply kind that completes this message once it is on the wire.
+    pub expect: ExpectedReply,
 }
 
 /// Two-level priority queue with coalescing support.
@@ -119,6 +135,7 @@ mod tests {
             priority,
             coalesce_key: key.map(String::from),
             response_timeout: None,
+            expect: ExpectedReply::Data,
         }
     }
 

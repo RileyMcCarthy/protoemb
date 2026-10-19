@@ -37,7 +37,8 @@
 //! The typical usage pattern is:
 //! 1. Create a [`transport::SerialTransport`] (or custom transport)
 //! 2. Create a [`client::Client`] with the transport
-//! 3. Use [`client::Client::read`] and [`client::Client::write`] to communicate
+//! 3. Use [`client::Client::read`], [`client::Client::write`] and
+//!    [`client::Client::query`] to communicate
 //! 4. Optionally wrap in [`bridge::StdioBridge`] for subprocess IPC
 
 pub mod transport;
@@ -55,7 +56,7 @@ pub mod wasm;
 
 // Re-export key types at crate root
 pub use client::Client;
-pub use queue::{Priority, QueuedMessage};
+pub use queue::{ExpectedReply, Priority, QueuedMessage};
 pub use storage::{DataStore, RingBuffer};
 pub use transport::Transport;
 #[cfg(not(target_arch = "wasm32"))]
