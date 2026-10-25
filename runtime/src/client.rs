@@ -122,8 +122,9 @@ struct PeriodicEntry {
     interval: Duration,
     /// Coalesce key for the priority queue.
     coalesce_key: String,
-    /// Last time a read was enqueued.
-    last_enqueued: Option<Instant>,
+    /// When the next read is due. Advanced by `interval` on a fixed grid, so
+    /// lateness in when `poll` is called does not accumulate into the rate.
+    next_due: Option<Instant>,
     /// Response timeout for these reads; `None` uses the client's.
     response_timeout: Option<Duration>,
 }
@@ -435,7 +436,7 @@ impl Client {
             command,
             interval,
             coalesce_key,
-            last_enqueued: None,
+            next_due: None,
             response_timeout,
         });
 
@@ -451,16 +452,25 @@ impl Client {
         self.periodic.retain(|e| e.command != command);
     }
 
-    /// Enqueue reads for any periodic entries whose interval has elapsed.
+    /// Enqueue reads for any periodic entries that are due.
     fn enqueue_periodic(&mut self) {
-        let now = Instant::now();
+        self.enqueue_periodic_at(Instant::now());
+    }
+
+    /// Reads are due on a fixed grid, `interval` apart, so a read enqueued late
+    /// (`poll` runs on a coarse tick) leaves the next one due on schedule rather
+    /// than `interval` after the late one, and the rate holds at 1/`interval`.
+    /// After a stall longer than one interval the grid restarts from `now`, so
+    /// the missed reads are not sent back to back.
+    fn enqueue_periodic_at(&mut self, now: Instant) {
         for entry in &mut self.periodic {
-            let due = match entry.last_enqueued {
-                Some(last) => now.duration_since(last) >= entry.interval,
+            let due = match entry.next_due {
+                Some(next) => now >= next,
                 None => true, // First time — immediately due
             };
             if due {
-                entry.last_enqueued = Some(now);
+                let next = entry.next_due.map_or(now, |n| n + entry.interval);
+                entry.next_due = Some(if now >= next { now + entry.interval } else { next });
                 let frame = build_read_frame(entry.command);
                 self.queue.push(QueuedMessage {
                     frame,
@@ -844,6 +854,53 @@ mod tests {
         std::thread::sleep(Duration::from_millis(40));
         let events = client.poll();
         assert_eq!(timeout_command(&events), Some(1), "events: {:?}", events);
+    }
+
+    /// Run the periodic scheduler at `t` and report whether it queued a read,
+    /// emptying the queue again so the next call starts clean.
+    fn periodic_read_queued_at(client: &mut Client, t: Instant) -> bool {
+        client.enqueue_periodic_at(t);
+        let queued = client.queue().low_len() > 0;
+        client.clear_queue();
+        queued
+    }
+
+    #[test]
+    fn test_periodic_reads_hold_their_rate_when_polled_on_a_coarse_tick() {
+        // A 10 ms read polled on a 4 ms tick: every read is served a little
+        // late, but the next one stays due on the 10 ms grid, so one second
+        // holds 101 reads (t = 0, 10, ..., 1000 ms) rather than one per 12 ms.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.register_periodic(0, Duration::from_millis(10), 10);
+        let t0 = Instant::now();
+
+        let mut sent_at = Vec::new();
+        for tick in 0..=250u64 {
+            let t = t0 + Duration::from_millis(tick * 4);
+            if periodic_read_queued_at(&mut client, t) {
+                sent_at.push(t);
+            }
+        }
+        assert_eq!(sent_at.len(), 101);
+        assert!(sent_at.windows(2).all(|w| w[1] - w[0] <= Duration::from_millis(12)));
+    }
+
+    #[test]
+    fn test_periodic_schedule_restarts_after_a_stall_without_a_burst() {
+        // Polling stalls for 55 ms (5 intervals). The read that is due goes
+        // out once, and the next is due one interval later: the missed reads
+        // are not sent back to back.
+        let mut client = Client::new(Box::new(MemoryTransport::new()));
+        client.register_periodic(0, Duration::from_millis(10), 10);
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+
+        assert!(periodic_read_queued_at(&mut client, at(0)));
+        assert!(periodic_read_queued_at(&mut client, at(55)));
+        for ms in 56..65 {
+            assert!(!periodic_read_queued_at(&mut client, at(ms)), "burst read at {} ms", ms);
+        }
+        assert!(periodic_read_queued_at(&mut client, at(65)));
     }
 
     #[test]
