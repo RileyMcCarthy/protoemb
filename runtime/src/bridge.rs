@@ -120,7 +120,7 @@ pub enum EventJson {
     Connected { port: String },
     Disconnected,
     Ack { command: u8 },
-    Nack { command: u8 },
+    Nack { command: u8, reason: u8 },
     Data { command: u8, payload: Vec<u8> },
     Notification { payload: Vec<u8> },
     Timeout,
@@ -239,7 +239,7 @@ impl StdioBridge {
                 for event in events {
                     let json_event = match event {
                         Event::Ack { command } => EventJson::Ack { command },
-                        Event::Nack { command } => EventJson::Nack { command },
+                        Event::Nack { command, reason } => EventJson::Nack { command, reason },
                         Event::Data { command, payload } => {
                             EventJson::Data { command, payload }
                         }

@@ -10,6 +10,20 @@
 
 export const PROTOCOL_VERSION = {{ protocol_version }};
 
+/** Why the device refused a request: the reason byte of a NACK frame. */
+export const NACK_REASON = {
+{% for r in nack_reasons %}
+    {{ r.name }}: 0x{{ '%02X' % r.value }},
+{% endfor %}
+} as const;
+
+/** Each NACK reason code's name and meaning, for showing a refusal to a person. */
+export const NACK_REASON_INFO: Readonly<Record<number, { name: string; description: string }>> = {
+{% for r in nack_reasons %}
+    0x{{ '%02X' % r.value }}: { name: '{{ r.name }}', description: "{{ r.description }}" },
+{% endfor %}
+};
+
 {% if nodes %}
 /** Node IDs (for multi-node / addressed framing). */
 export const NODE = {

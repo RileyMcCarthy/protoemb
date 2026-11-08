@@ -8,6 +8,14 @@
 /// Protocol version
 pub const PROTOCOL_VERSION: u32 = {{ protocol_version }};
 
+/// Why the device refused a request: `(code, name, meaning)` for each value
+/// a NACK frame's reason byte can take.
+pub const NACK_REASONS: &[(u8, &str, &str)] = &[
+{% for r in nack_reasons %}
+    (0x{{ '%02X' % r.value }}, "{{ r.name }}", "{{ r.description }}"),
+{% endfor %}
+];
+
 {% if nodes %}
 // Node IDs (for multi-node / addressed framing).
 {% for node in nodes %}

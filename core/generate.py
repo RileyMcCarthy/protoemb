@@ -235,6 +235,74 @@ def enrich_union(udef, name, structs, unions, enums, defaults):
         udef["_wire_size"] = 1 + max_bytes
 
 
+# NACK reasons the generated runtime sends on its own. Fixed codes, below
+# NACK_REASON_APP_MIN, the same for every protocol. A schema adds its own
+# reasons under `nack_reasons:` for its handlers to return.
+RUNTIME_NACK_REASONS = [
+    {"name": "REFUSED", "value": 0x00,
+     "description": "The handler refused the request without naming a reason."},
+    {"name": "UNKNOWN_COMMAND", "value": 0x01,
+     "description": "The device has no handler for this command."},
+    {"name": "BAD_CRC", "value": 0x02,
+     "description": "The frame's payload failed its CRC check."},
+    {"name": "BAD_SIZE", "value": 0x03,
+     "description": "The payload is not the size this command takes."},
+    {"name": "UNAVAILABLE", "value": 0x04,
+     "description": "The device has nothing to answer this read with right now."},
+]
+NACK_REASON_APP_MIN = 0x20
+NACK_REASON_MAX = 0xFF
+
+
+def process_nack_reasons(schema):
+    """The full NACK reason table: the runtime's fixed reasons, then the
+    schema's, numbered from NACK_REASON_APP_MIN in order unless given a value."""
+    reasons = [dict(r, _runtime=True) for r in RUNTIME_NACK_REASONS]
+    next_value = NACK_REASON_APP_MIN
+    for entry in schema.get("nack_reasons", []) or []:
+        if not isinstance(entry, dict):
+            entry = {"name": entry}
+        value = entry.get("value", next_value)
+        reasons.append({
+            "name": entry.get("name"),
+            "value": value,
+            "description": entry.get("description", ""),
+            "_runtime": False,
+        })
+        if isinstance(value, int):
+            next_value = value + 1
+    return reasons
+
+
+def validate_nack_reasons(reasons, errors):
+    """Append an error for each malformed or colliding NACK reason."""
+    seen_names = {}
+    seen_values = {}
+    for r in reasons:
+        name = r["name"]
+        value = r["value"]
+        where = f"nack_reasons.{name}"
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            errors.append(f"{where}: name must be UPPER_SNAKE_CASE")
+        elif name in seen_names:
+            errors.append(f"{where}: duplicate name (the runtime defines REFUSED, "
+                          f"UNKNOWN_COMMAND, BAD_CRC, BAD_SIZE and UNAVAILABLE)")
+        else:
+            seen_names[name] = r
+        description = r["description"]
+        if not isinstance(description, str) or re.search(r'["\\\n]', description):
+            errors.append(f"{where}: description must be one line with no '\"' or '\\'")
+        if not r["_runtime"]:
+            if not isinstance(value, int) or not NACK_REASON_APP_MIN <= value <= NACK_REASON_MAX:
+                errors.append(f"{where}: value must be an integer in "
+                              f"[0x{NACK_REASON_APP_MIN:02X}, 0x{NACK_REASON_MAX:02X}]")
+                continue
+        if value in seen_values:
+            errors.append(f"{where}: value 0x{value:02X} already used by {seen_values[value]}")
+        else:
+            seen_values[value] = name
+
+
 def process_schema(schema, prefix=DEFAULT_PREFIX):
     """Process raw schema YAML into enriched data for templates."""
     prefix_upper = prefix.upper()
@@ -526,6 +594,7 @@ def process_schema(schema, prefix=DEFAULT_PREFIX):
         "messages": messages,
         "runtime_read_messages": read_messages,
         "runtime_write_messages": write_messages,
+        "nack_reasons": process_nack_reasons(schema),
     }
 
 
@@ -598,6 +667,7 @@ def validate_schema(data):
     """Validate the processed schema. Raises on error."""
     errors = []
     validate_unions(data, errors)
+    validate_nack_reasons(data.get("nack_reasons", []), errors)
     enums = data["enums"]
     structs = data["structs"]
     messages = data["messages"]
