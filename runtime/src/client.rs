@@ -46,8 +46,9 @@ const READ_BUF_SIZE: usize = 4096;
 pub enum Event {
     /// ACK received for a write command.
     Ack { command: u8 },
-    /// NACK received for a command.
-    Nack { command: u8 },
+    /// NACK received for a command, with the device's reason code (a value
+    /// from the protocol's NACK reason table).
+    Nack { command: u8, reason: u8 },
     /// DATA response received (command + decoded payload bytes).
     Data {
         command: u8,
@@ -285,7 +286,7 @@ impl Client {
                 }
                 Event::Ack { command: cmd }
             }
-            ParsedFrame::Nack(cmd) => {
+            ParsedFrame::Nack { command: cmd, reason } => {
                 if let Some(expected) = self.pending.as_ref().map(|p| p.command) {
                     if expected != cmd {
                         return Event::Error {
@@ -299,7 +300,7 @@ impl Client {
                     // rejected the request, so no other reply is coming.
                     self.pending = None;
                 }
-                Event::Nack { command: cmd }
+                Event::Nack { command: cmd, reason }
             }
             ParsedFrame::Data { command, payload } => {
                 if let Some(ref pending_req) = self.pending {
@@ -669,8 +670,8 @@ mod tests {
     fn test_query_completes_on_matching_nack() {
         let mut client = client_with_pending(|c| c.query(9, &[0x01]));
 
-        let event = client.handle_frame(ParsedFrame::Nack(9));
-        assert!(matches!(event, Event::Nack { command: 9 }));
+        let event = client.handle_frame(ParsedFrame::Nack { command: 9, reason: 0x03 });
+        assert!(matches!(event, Event::Nack { command: 9, reason: 0x03 }));
         assert!(!client.is_pending());
     }
 
@@ -696,8 +697,8 @@ mod tests {
     fn test_write_completes_on_matching_nack() {
         let mut client = client_with_pending(|c| c.write(0x07, &[0x01]));
 
-        let event = client.handle_frame(ParsedFrame::Nack(0x07));
-        assert!(matches!(event, Event::Nack { command: 0x07 }));
+        let event = client.handle_frame(ParsedFrame::Nack { command: 0x07, reason: 0x03 });
+        assert!(matches!(event, Event::Nack { command: 0x07, reason: 0x03 }));
         assert!(!client.is_pending());
     }
 
@@ -776,8 +777,8 @@ mod tests {
         let _ = client.poll();
         assert!(client.is_pending());
 
-        let event = client.handle_frame(ParsedFrame::Nack(0x02));
-        assert!(matches!(event, Event::Nack { command: 0x02 }));
+        let event = client.handle_frame(ParsedFrame::Nack { command: 0x02, reason: 0x03 });
+        assert!(matches!(event, Event::Nack { command: 0x02, reason: 0x03 }));
         assert!(!client.is_pending());
 
         let events = client.poll();

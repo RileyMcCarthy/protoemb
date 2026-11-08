@@ -4,7 +4,7 @@
 //! ```text
 //! READ request:   [0x55] [TYPE=0x00] [COMMAND]
 //! WRITE request:  [0x55] [TYPE=0x01] [COMMAND] [LEN_LO] [LEN_HI] [DATA...] [CRC8]
-//! NACK response:  [0x55] [TYPE=0x00] [COMMAND]
+//! NACK response:  [0x55] [TYPE=0x00] [COMMAND] [REASON]
 //! ACK response:   [0x55] [TYPE=0x01] [COMMAND]
 //! DATA response:  [0x55] [TYPE=0x02] [COMMAND] [LEN_LO] [LEN_HI] [DATA...] [CRC8]
 //! NOTIFICATION:   [0x55] [TYPE=0x03] [0x00]    [LEN_LO] [LEN_HI] [DATA...] [CRC8]
@@ -68,8 +68,9 @@ pub enum Direction {
 /// A fully parsed and validated frame
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedFrame {
-    /// NACK response — command byte only
-    Nack(u8),
+    /// NACK response — the refused command and why the device refused it
+    /// (a code from the protocol's NACK reason table).
+    Nack { command: u8, reason: u8 },
     /// ACK response — command byte only
     Ack(u8),
     /// DATA response — command byte + payload
@@ -124,6 +125,14 @@ pub fn build_write_frame(command: u8, data: &[u8]) -> Vec<u8> {
     frame
 }
 
+/// Build a NACK response frame (4 bytes): what a device sends to refuse a
+/// request. Host code never sends one; it is here for fakes and tests.
+///
+/// `[SYNC] [TYPE=0x00] [COMMAND] [REASON]`
+pub fn build_nack_frame(command: u8, reason: u8) -> Vec<u8> {
+    vec![SYNC_BYTE, 0x00, command, reason]
+}
+
 // ── Multi-node addressing (opt-in) ──
 //
 // On a shared bus (RS-485, multi-drop), a receiver needs to know which node
@@ -165,6 +174,7 @@ enum ParseState {
     Source,
     Type,
     Command,
+    NackReason,
     LengthLo,
     LengthHi,
     Data,
@@ -270,11 +280,12 @@ impl FrameParser {
                 self.command = byte;
 
                 match self.frame_type {
-                    // NACK (0x00) or ACK (0x01) — short frames, no payload
+                    // NACK (0x00) carries one more byte, its reason
                     0x00 => {
-                        self.state = ParseState::Sync;
-                        Some(ParsedFrame::Nack(self.command))
+                        self.state = ParseState::NackReason;
+                        None
                     }
+                    // ACK (0x01) — short frame, no payload
                     0x01 => {
                         self.state = ParseState::Sync;
                         Some(ParsedFrame::Ack(self.command))
@@ -289,6 +300,11 @@ impl FrameParser {
                         None
                     }
                 }
+            }
+
+            ParseState::NackReason => {
+                self.state = ParseState::Sync;
+                Some(ParsedFrame::Nack { command: self.command, reason: byte })
             }
 
             ParseState::LengthLo => {
@@ -428,20 +444,39 @@ mod tests {
     fn test_addressed_read_frame_roundtrip() {
         let frame = build_read_frame_from(0x03, 0x02);
         assert_eq!(frame, vec![SYNC_BYTE, 0x03, 0x00, 0x02]);
+        // Inbound, type 0x00 is a NACK, which carries a reason byte after the
+        // command: an addressed NACK is the READ frame plus that byte.
+        let mut nack = frame.clone();
+        nack.push(0x21);
         let mut parser = FrameParser::with_addressing();
-        let frames = parser.feed_bytes(&frame);
+        let frames = parser.feed_bytes(&nack);
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0], ParsedFrame::Nack(0x02)); // type 0x00 = NACK inbound
+        assert_eq!(frames[0], ParsedFrame::Nack { command: 0x02, reason: 0x21 });
         assert_eq!(parser.source(), 0x03);
     }
 
     #[test]
     fn test_parse_nack() {
         let mut parser = FrameParser::new();
-        let bytes = [SYNC_BYTE, 0x00, 0x05]; // NACK for command 5
+        let bytes = build_nack_frame(0x05, 0x03); // NACK for command 5, reason 3
+        assert_eq!(bytes, vec![SYNC_BYTE, 0x00, 0x05, 0x03]);
         let frames = parser.feed_bytes(&bytes);
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0], ParsedFrame::Nack(0x05));
+        assert_eq!(frames[0], ParsedFrame::Nack { command: 0x05, reason: 0x03 });
+    }
+
+    #[test]
+    fn test_nack_reason_may_equal_sync() {
+        // The reason byte is positional, so a reason of 0x55 is read as the
+        // reason and the frame after it still parses.
+        let mut parser = FrameParser::new();
+        let mut bytes = build_nack_frame(0x05, SYNC_BYTE);
+        bytes.extend_from_slice(&[SYNC_BYTE, 0x01, 0x06]);
+        let frames = parser.feed_bytes(&bytes);
+        assert_eq!(frames, vec![
+            ParsedFrame::Nack { command: 0x05, reason: SYNC_BYTE },
+            ParsedFrame::Ack(0x06),
+        ]);
     }
 
     #[test]
@@ -518,12 +553,12 @@ mod tests {
         // ACK + NACK back to back
         let bytes = [
             SYNC_BYTE, 0x01, 0x02, // ACK cmd=2
-            SYNC_BYTE, 0x00, 0x05, // NACK cmd=5
+            SYNC_BYTE, 0x00, 0x05, 0x00, // NACK cmd=5
         ];
         let frames = parser.feed_bytes(&bytes);
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0], ParsedFrame::Ack(0x02));
-        assert_eq!(frames[1], ParsedFrame::Nack(0x05));
+        assert_eq!(frames[1], ParsedFrame::Nack { command: 0x05, reason: 0x00 });
     }
 
     #[test]
@@ -653,11 +688,11 @@ mod fuzz_tests {
         let mut parser = FrameParser::new();
         let payload = vec![1, 2, 3, 4, 5];
         let mut stream = Vec::new();
-        stream.extend_from_slice(&[SYNC_BYTE, 0x00, 0x10]); // NACK cmd 0x10
+        stream.extend_from_slice(&build_nack_frame(0x10, 0x02)); // NACK cmd 0x10
         stream.extend_from_slice(&[SYNC_BYTE, 0x01, 0x11]); // ACK  cmd 0x11
         stream.extend_from_slice(&data_frame(0x12, &payload)); // DATA cmd 0x12
         let frames = parser.feed_bytes(&stream);
-        assert_eq!(frames[0], ParsedFrame::Nack(0x10));
+        assert_eq!(frames[0], ParsedFrame::Nack { command: 0x10, reason: 0x02 });
         assert_eq!(frames[1], ParsedFrame::Ack(0x11));
         assert_eq!(frames[2], ParsedFrame::Data { command: 0x12, payload });
     }

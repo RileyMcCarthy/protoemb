@@ -220,3 +220,50 @@ def test_valid_schema_passes(capsys):
     validate(s)  # must not raise
     out = capsys.readouterr().out
     assert "Schema validation passed" in out
+
+
+# ── NACK reasons ─────────────────────────────────────────────────────────────
+
+def test_nack_reason_clashes_with_runtime_name(capsys):
+    s = schema(nack_reasons=[{"name": "BAD_CRC", "description": "x"}])
+    expect_error(capsys, s, "duplicate name")
+
+
+def test_nack_reason_value_in_runtime_range(capsys):
+    s = schema(nack_reasons=[{"name": "MINE", "value": 0x05, "description": "x"}])
+    expect_error(capsys, s, "value must be an integer in [0x20, 0xFF]")
+
+
+def test_nack_reason_duplicate_value(capsys):
+    s = schema(nack_reasons=[
+        {"name": "ONE", "value": 0x30, "description": "x"},
+        {"name": "TWO", "value": 0x30, "description": "y"},
+    ])
+    expect_error(capsys, s, "already used by ONE")
+
+
+def test_nack_reason_name_case(capsys):
+    s = schema(nack_reasons=[{"name": "busy", "description": "x"}])
+    expect_error(capsys, s, "UPPER_SNAKE_CASE")
+
+
+def test_nack_reason_description_quote(capsys):
+    s = schema(nack_reasons=[{"name": "BUSY", "description": 'say "hi"'}])
+    expect_error(capsys, s, "description must be one line")
+
+
+def test_nack_reason_description_closes_c_comment(capsys):
+    s = schema(nack_reasons=[{"name": "BUSY", "description": "Busy */ oops"}])
+    expect_error(capsys, s, "or '*/'")
+
+
+def test_nack_reason_duplicate_schema_names_omit_runtime_hint(capsys):
+    s = schema(nack_reasons=[
+        {"name": "BUSY", "description": "x"},
+        {"name": "BUSY", "description": "y"},
+    ])
+    with pytest.raises(SystemExit):
+        validate(s)
+    err = capsys.readouterr().err
+    assert "nack_reasons.BUSY: duplicate name" in err
+    assert "the runtime defines" not in err

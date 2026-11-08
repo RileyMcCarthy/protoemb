@@ -17,16 +17,39 @@
 #define {{ prefix_upper }}_RUNTIME_TIMEOUT_MS {{ runtime_timeout_ms }}U
 #endif
 
+/*
+ * Why a request was refused: the fourth byte of every NACK frame
+ * ([0x55][0x00][CMD][REASON]). Codes below 0x20 are the runtime's own; the
+ * rest come from the schema's `nack_reasons`.
+ */
 typedef enum
 {
-    {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_NACK = 0,
-    {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_ACK = 1,
+{% for r in nack_reasons %}
+    {{ prefix_upper }}_NACK_REASON_{{ r.name }} = 0x{{ '%02X' % r.value }}U, /* {{ r.description }} */
+{% endfor %}
+} {{ prefix }}_NackReason_E;
+
+/*
+ * A handler's answer. Each NACK_<REASON> value is that reason's code, so the
+ * runtime sends it as the NACK's reason byte; plain NACK is REFUSED. ACK and
+ * DATA sit above every code.
+ */
+typedef enum
+{
+    {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_NACK = 0x{{ '%02X' % nack_reasons[0].value }},
+{% for r in nack_reasons[1:] %}
+    {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_NACK_{{ r.name }} = 0x{{ '%02X' % r.value }},
+{% endfor %}
+    {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_ACK = 0x100,
 } {{ prefix }}_RuntimeWriteDisposition_E;
 
 typedef enum
 {
-    {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_NACK = 0,
-    {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_DATA = 1,
+    {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_NACK = 0x{{ '%02X' % nack_reasons[0].value }},
+{% for r in nack_reasons[1:] %}
+    {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_NACK_{{ r.name }} = 0x{{ '%02X' % r.value }},
+{% endfor %}
+    {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_DATA = 0x100,
 } {{ prefix }}_RuntimeQueryDisposition_E;
 
 typedef enum
@@ -81,8 +104,9 @@ bool {{ prefix }}_Runtime_sendNotificationFromCallback({{ prefix }}_Runtime_t *r
  *
  * Semantic callbacks:
  *   - onRead_*: READ-frame providers (returns true/false)
- *   - onQuery_*: WRITE-frame queries (returns DATA/NACK)
- *   - onWrite_*: WRITE-frame commands (returns ACK/NACK)
+ *   - onQuery_*: WRITE-frame queries (returns DATA or a NACK disposition)
+ *   - onWrite_*: WRITE-frame commands (returns ACK or a NACK disposition)
+ *   A read provider that returns false is NACKed as UNAVAILABLE.
  *
  * Transport + time are provided the same way (declared here, defined by the
  * application). They are plain extern functions, NOT registered function

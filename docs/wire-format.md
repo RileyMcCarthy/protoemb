@@ -14,7 +14,7 @@ byte `0x55`.
 ```text
 READ request:   [0x55] [0x00] [CMD]
 WRITE request:  [0x55] [0x01] [CMD] [LEN_LO] [LEN_HI] [DATA…] [CRC8]
-NACK response:  [0x55] [0x00] [CMD]
+NACK response:  [0x55] [0x00] [CMD] [REASON]
 ACK response:   [0x55] [0x01] [CMD]
 DATA response:  [0x55] [0x02] [CMD] [LEN_LO] [LEN_HI] [DATA…] [CRC8]
 NOTIFICATION:   [0x55] [0x03] [0x00] [LEN_LO] [LEN_HI] [DATA…] [CRC8]
@@ -22,11 +22,38 @@ NOTIFICATION:   [0x55] [0x03] [0x00] [LEN_LO] [LEN_HI] [DATA…] [CRC8]
 
 - **Type byte** is direction-overloaded: `0x00` = READ (host→device) or NACK
   (device→host); `0x01` = WRITE or ACK; `0x02` = DATA; `0x03` = NOTIFICATION.
+- **REASON** says why the device refused the request. Codes below `0x20`
+  belong to the runtime and are the same for every protocol; a schema adds
+  its own from `0x20` up under `nack_reasons` (see below).
 - **LEN** is a 16-bit payload length; payloads are capped at `MAX_PAYLOAD`
   (default 4096).
 - **CRC8** is CRC-8/MAXIM (poly `0x8C`, reflected) over `DATA` only.
 - The streaming parser resynchronises by scanning for `0x55`; there is no
   byte-stuffing, so integrity rests on the CRC plus a clean stream.
+
+### NACK reasons
+
+| Code | Name | Sent when |
+|---|---|---|
+| `0x00` | `REFUSED` | a handler returned plain `NACK` |
+| `0x01` | `UNKNOWN_COMMAND` | no handler exists for the command |
+| `0x02` | `BAD_CRC` | the WRITE frame's payload failed its CRC |
+| `0x03` | `BAD_SIZE` | the payload is not the size the command takes |
+| `0x04` | `UNAVAILABLE` | a read provider returned false |
+| `0x20`– | schema | a handler returned `NACK_<NAME>` |
+
+A schema declares its reasons in order; each is numbered from `0x20` unless it
+gives a `value`:
+
+```yaml
+nack_reasons:
+  - { name: SD_NOT_OPEN, description: "No program file is open on the SD card." }
+  - { name: BUSY, value: 0x30, description: "A test is already running." }
+```
+
+C handlers return `<PREFIX>_RUNTIME_WRITE_DISPOSITION_NACK_<NAME>` (or the
+`QUERY` form), and the runtime sends that reason's code. TypeScript gets
+`NACK_REASON` and `NACK_REASON_INFO`; Rust gets `NACK_REASONS`.
 
 `command` (`CMD`) selects a message. READ and WRITE command-id spaces are
 independent; a DATA frame's command identifies which response payload it

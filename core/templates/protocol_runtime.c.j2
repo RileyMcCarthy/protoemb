@@ -61,7 +61,7 @@ static bool {{ prefix }}_Runtime_sendFrame({{ prefix }}_Runtime_t *runtime,
         return false;
     }
 
-    if ((frameType == {{ prefix_upper }}_FRAME_TYPE_READ_OR_NACK) || (frameType == {{ prefix_upper }}_FRAME_TYPE_WRITE_OR_ACK))
+    if (frameType == {{ prefix_upper }}_FRAME_TYPE_WRITE_OR_ACK)
     {
         const uint8_t frame[3] = { {{ prefix_upper }}_FRAME_SYNC, frameType, command };
         return {{ prefix }}_sendBytes(frame, 3U);
@@ -94,9 +94,18 @@ static bool {{ prefix }}_Runtime_sendAck({{ prefix }}_Runtime_t *runtime, uint8_
     return {{ prefix }}_Runtime_sendFrame(runtime, {{ prefix_upper }}_FRAME_TYPE_WRITE_OR_ACK, command, NULL, 0U);
 }
 
-static bool {{ prefix }}_Runtime_sendNack({{ prefix }}_Runtime_t *runtime, uint8_t command)
+/* [SYNC][0x00][CMD][REASON]: a NACK says why, in one byte. */
+static bool {{ prefix }}_Runtime_sendNack({{ prefix }}_Runtime_t *runtime, uint8_t command, uint8_t reason)
 {
-    return {{ prefix }}_Runtime_sendFrame(runtime, {{ prefix_upper }}_FRAME_TYPE_READ_OR_NACK, command, NULL, 0U);
+    if (runtime == NULL)
+    {
+        return false;
+    }
+
+    {
+        const uint8_t frame[4] = { {{ prefix_upper }}_FRAME_SYNC, {{ prefix_upper }}_FRAME_TYPE_READ_OR_NACK, command, reason };
+        return {{ prefix }}_sendBytes(frame, 4U);
+    }
 }
 
 static bool {{ prefix }}_Runtime_sendData({{ prefix }}_Runtime_t *runtime, uint8_t command, const uint8_t *payload, uint16_t payloadSize)
@@ -114,15 +123,18 @@ static void {{ prefix }}_Runtime_applyWriteDisposition({{ prefix }}_Runtime_t *r
                                                        uint8_t command,
                                                        {{ prefix }}_RuntimeWriteDisposition_E disposition)
 {
-    switch (disposition)
+    if (disposition == {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_ACK)
     {
-    case {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_ACK:
         (void){{ prefix }}_Runtime_sendAck(runtime, command);
-        break;
-    case {{ prefix_upper }}_RUNTIME_WRITE_DISPOSITION_NACK:
-    default:
-        (void){{ prefix }}_Runtime_sendNack(runtime, command);
-        break;
+    }
+    else
+    {
+        /* Every other disposition is a NACK whose value is its reason code;
+         * a value outside the reason range is sent as REFUSED. */
+        const uint32_t code = (uint32_t)disposition;
+        (void){{ prefix }}_Runtime_sendNack(runtime,
+                                            command,
+                                            (code <= 0xFFU) ? (uint8_t)code : (uint8_t){{ prefix_upper }}_NACK_REASON_REFUSED);
     }
 }
 
@@ -143,15 +155,18 @@ static void {{ prefix }}_Runtime_applyQueryDisposition({{ prefix }}_Runtime_t *r
                                                        const uint8_t *outPayload,
                                                        uint16_t outSize)
 {
-    switch (disposition)
+    if (disposition == {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_DATA)
     {
-    case {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_DATA:
         (void){{ prefix }}_Runtime_sendData(runtime, command, outPayload, outSize);
-        break;
-    case {{ prefix_upper }}_RUNTIME_QUERY_DISPOSITION_NACK:
-    default:
-        (void){{ prefix }}_Runtime_sendNack(runtime, command);
-        break;
+    }
+    else
+    {
+        /* Every other disposition is a NACK whose value is its reason code;
+         * a value outside the reason range is sent as REFUSED. */
+        const uint32_t code = (uint32_t)disposition;
+        (void){{ prefix }}_Runtime_sendNack(runtime,
+                                            command,
+                                            (code <= 0xFFU) ? (uint8_t)code : (uint8_t){{ prefix_upper }}_NACK_REASON_REFUSED);
     }
 }
 
@@ -174,7 +189,7 @@ static void {{ prefix }}_Runtime_dispatchRead({{ prefix }}_Runtime_t *runtime, u
         }
         else
         {
-            (void){{ prefix }}_Runtime_sendNack(runtime, command);
+            (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_UNAVAILABLE);
         }
 {% else %}
         uint16_t outSize = 0U;
@@ -185,14 +200,14 @@ static void {{ prefix }}_Runtime_dispatchRead({{ prefix }}_Runtime_t *runtime, u
         }
         else
         {
-            (void){{ prefix }}_Runtime_sendNack(runtime, command);
+            (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_UNAVAILABLE);
         }
 {% endif %}
         break;
     }
 {% endfor %}
     default:
-        (void){{ prefix }}_Runtime_sendNack(runtime, command);
+        (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_UNKNOWN_COMMAND);
         break;
     }
 }
@@ -257,7 +272,7 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
         }
         else
         {
-            (void){{ prefix }}_Runtime_sendNack(runtime, command);
+            (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_BAD_SIZE);
         }
 {% elif msg._payload_type == "none" %}
         if (payloadSize == 0U)
@@ -276,7 +291,7 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
         }
         else
         {
-            (void){{ prefix }}_Runtime_sendNack(runtime, command);
+            (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_BAD_SIZE);
         }
 {% else %}
 {% if msg._semantic == "query" %}
@@ -295,7 +310,7 @@ static void {{ prefix }}_Runtime_dispatchWrite({{ prefix }}_Runtime_t *runtime,
     }
 {% endfor %}
     default:
-        (void){{ prefix }}_Runtime_sendNack(runtime, command);
+        (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t){{ prefix_upper }}_NACK_REASON_UNKNOWN_COMMAND);
         break;
     }
 }
@@ -401,7 +416,7 @@ void {{ prefix }}_Runtime_feedByte({{ prefix }}_Runtime_t *runtime, uint8_t byte
         }
         else
         {
-            (void){{ prefix }}_Runtime_sendNack(runtime, runtime->command);
+            (void){{ prefix }}_Runtime_sendNack(runtime, runtime->command, (uint8_t){{ prefix_upper }}_NACK_REASON_BAD_CRC);
         }
         {{ prefix }}_Runtime_reset(runtime);
         break;
