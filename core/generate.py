@@ -285,13 +285,16 @@ def validate_nack_reasons(reasons, errors):
         if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
             errors.append(f"{where}: name must be UPPER_SNAKE_CASE")
         elif name in seen_names:
-            errors.append(f"{where}: duplicate name (the runtime defines REFUSED, "
-                          f"UNKNOWN_COMMAND, BAD_CRC, BAD_SIZE and UNAVAILABLE)")
+            hint = (" (the runtime defines REFUSED, UNKNOWN_COMMAND, BAD_CRC, BAD_SIZE "
+                    "and UNAVAILABLE)") if seen_names[name]["_runtime"] else ""
+            errors.append(f"{where}: duplicate name{hint}")
         else:
             seen_names[name] = r
         description = r["description"]
-        if not isinstance(description, str) or re.search(r'["\\\n]', description):
-            errors.append(f"{where}: description must be one line with no '\"' or '\\'")
+        # Emitted inside a C /* */ comment and TS/Rust string literals.
+        if (not isinstance(description, str) or re.search(r'["\\\n]', description)
+                or "*/" in description):
+            errors.append(f"{where}: description must be one line with no '\"', '\\' or '*/'")
         if not r["_runtime"]:
             if not isinstance(value, int) or not NACK_REASON_APP_MIN <= value <= NACK_REASON_MAX:
                 errors.append(f"{where}: value must be an integer in "

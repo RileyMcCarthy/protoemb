@@ -129,8 +129,12 @@ static void {{ prefix }}_Runtime_applyWriteDisposition({{ prefix }}_Runtime_t *r
     }
     else
     {
-        /* Every other disposition is a NACK whose value is its reason code. */
-        (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t)((uint32_t)disposition & 0xFFU));
+        /* Every other disposition is a NACK whose value is its reason code;
+         * a value outside the reason range is sent as REFUSED. */
+        const uint32_t code = (uint32_t)disposition;
+        (void){{ prefix }}_Runtime_sendNack(runtime,
+                                            command,
+                                            (code <= 0xFFU) ? (uint8_t)code : (uint8_t){{ prefix_upper }}_NACK_REASON_REFUSED);
     }
 }
 
@@ -157,8 +161,12 @@ static void {{ prefix }}_Runtime_applyQueryDisposition({{ prefix }}_Runtime_t *r
     }
     else
     {
-        /* Every other disposition is a NACK whose value is its reason code. */
-        (void){{ prefix }}_Runtime_sendNack(runtime, command, (uint8_t)((uint32_t)disposition & 0xFFU));
+        /* Every other disposition is a NACK whose value is its reason code;
+         * a value outside the reason range is sent as REFUSED. */
+        const uint32_t code = (uint32_t)disposition;
+        (void){{ prefix }}_Runtime_sendNack(runtime,
+                                            command,
+                                            (code <= 0xFFU) ? (uint8_t)code : (uint8_t){{ prefix_upper }}_NACK_REASON_REFUSED);
     }
 }
 

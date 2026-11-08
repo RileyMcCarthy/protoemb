@@ -250,3 +250,20 @@ def test_nack_reason_name_case(capsys):
 def test_nack_reason_description_quote(capsys):
     s = schema(nack_reasons=[{"name": "BUSY", "description": 'say "hi"'}])
     expect_error(capsys, s, "description must be one line")
+
+
+def test_nack_reason_description_closes_c_comment(capsys):
+    s = schema(nack_reasons=[{"name": "BUSY", "description": "Busy */ oops"}])
+    expect_error(capsys, s, "or '*/'")
+
+
+def test_nack_reason_duplicate_schema_names_omit_runtime_hint(capsys):
+    s = schema(nack_reasons=[
+        {"name": "BUSY", "description": "x"},
+        {"name": "BUSY", "description": "y"},
+    ])
+    with pytest.raises(SystemExit):
+        validate(s)
+    err = capsys.readouterr().err
+    assert "nack_reasons.BUSY: duplicate name" in err
+    assert "the runtime defines" not in err

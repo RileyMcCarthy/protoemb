@@ -56,6 +56,7 @@ Nk_RuntimeWriteDisposition_E Nk_onWrite_set_level(const Nk_Level_t *in)
 {
     if (in->value == 0U) { return NK_RUNTIME_WRITE_DISPOSITION_NACK; }
     if (in->value == 7U) { return NK_RUNTIME_WRITE_DISPOSITION_NACK_LOCKED; }
+    if (in->value == 9U) { return (Nk_RuntimeWriteDisposition_E)0x1FF; }
     return (in->value > 100U) ? NK_RUNTIME_WRITE_DISPOSITION_NACK_TOO_HIGH : NK_RUNTIME_WRITE_DISPOSITION_ACK;
 }
 Nk_RuntimeWriteDisposition_E Nk_onWriteRaw_set_level(const uint8_t *payload, uint16_t payloadSize)
@@ -164,3 +165,7 @@ def test_wrong_size_struct_payload_reaches_raw_handler(device):
 
 def test_read_with_nothing_to_answer(device):
     assert device([0x55, 0x00, 0x01]) == "55 00 01 04"
+
+
+def test_out_of_range_disposition_is_refused(device):
+    assert device(write_frame(2, [9])) == "55 00 02 00"
