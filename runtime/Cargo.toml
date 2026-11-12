@@ -21,12 +21,13 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 protoemb-framing = { path = "../framing" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 log = "0.4"
 
-# Native-only: real serial port + NDJSON stdio bridge binary.
+# Native-only: real serial port + the NDJSON stdio bridge (the only user of
+# serde_json).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serialport = "4"
+serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -43,6 +44,6 @@ console_error_panic_hook = "0.1"
 
 [[bin]]
 name = "protoemb-bridge"
+# Native only: it needs the `bridge` module, which the lib compiles out on
+# wasm32. Wasm builds are `--lib` only (wasm-pack, and the wasm clippy leg).
 path = "src/bin/protoemb_bridge.rs"
-# The bridge binary depends on serialport/stdio; it is not part of the wasm build.
-required-features = []

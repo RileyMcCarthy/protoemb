@@ -113,7 +113,8 @@ jobs:
   # manifest. The runtime crate is linted for both native (serial + stdio
   # bridge) and the browser wasm target. The wasm leg uses --lib only: that is
   # exactly what wasm-pack compiles, and --all-targets can't apply there because
-  # the native-only protoemb-bridge bin is cfg'd out of the wasm build.
+  # the protoemb-bridge bin needs the `bridge` module, which the lib compiles
+  # out on wasm32.
   clippy:
     name: clippy (-D warnings)
     runs-on: ubuntu-latest

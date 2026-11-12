@@ -1,6 +1,6 @@
 //! NDJSON stdio bridge — JSON-RPC-like interface over stdin/stdout.
 //!
-//! Allows a host process (e.g. Electron, Python, etc.) to control
+//! Allows a host process (a desktop app, a Python script, etc.) to control
 //! the ProtoEmb serial client by sending newline-delimited JSON
 //! commands on stdin and receiving JSON events on stdout.
 //!
@@ -30,7 +30,7 @@
 //! {"event": "connected", "port": "/dev/cu.usbserial"}
 //! {"event": "disconnected"}
 //! {"event": "ack", "command": 1}
-//! {"event": "nack", "command": 1}
+//! {"event": "nack", "command": 1, "reason": 3}
 //! {"event": "data", "command": 0, "payload": [1,2,3,...]}
 //! {"event": "notification", "payload": [1,2,3,...]}
 //! {"event": "timeout"}
