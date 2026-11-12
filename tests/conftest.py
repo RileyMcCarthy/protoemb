@@ -3,7 +3,7 @@
 # Puts the generator (`core/`) and the testkit (this directory) on sys.path so
 # `import generate` and `from protoemb_testkit import ...` work from any test
 # module, regardless of where pytest is invoked from. Keeping this here makes the
-# library self-testing once it is split out into its own repo.
+# library self-testing, standalone or vendored as a submodule.
 import os
 import sys
 

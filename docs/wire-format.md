@@ -59,6 +59,23 @@ C handlers return `<PREFIX>_RUNTIME_WRITE_DISPOSITION_NACK_<NAME>` (or the
 independent; a DATA frame's command identifies which response payload it
 carries (the generator enforces that DATA-producing command ids are unique).
 
+### Source-addressed frames (framing crate only)
+
+For a shared bus, `protoemb-framing` can build and parse request frames that
+carry a 1-byte source node id after the sync byte:
+
+```text
+READ request:   [0x55] [SRC] [0x00] [CMD]
+WRITE request:  [0x55] [SRC] [0x01] [CMD] [LEN_LO] [LEN_HI] [DATA…] [CRC8]
+```
+
+`build_read_frame_from` / `build_write_frame_from` build them, and
+`FrameParser::with_addressing()` expects the same `[SRC]` byte after the sync
+byte of every response frame it parses (`source()` returns it). The CRC still covers `DATA` only. Nothing else
+speaks this layout: the generated C runtime, the runtime `Client` and the
+TypeScript target use the unaddressed frames above, so an addressed link needs
+its own device-side framing.
+
 ## 2. Payload layer (struct encoding)
 
 A struct is either `packed` (bit-level, no padding) or `aligned` (byte-level,
@@ -67,13 +84,16 @@ time (`*_WIRE_SIZE`). Fields are laid out in declaration order.
 
 ### Scalars
 
-- **Integers** use the field's declared width (aligned) or a bit count derived
-  from `min`/`max`×`scale`, or an explicit `bits:` (packed).
+- **Integers** (`int8`/`uint8`, `int16`/`uint16`, `int32`/`uint32`) use the
+  field's declared width (aligned) or a bit count derived from
+  `min`/`max`×`scale`, or an explicit `bits:` (packed). There are no 64-bit
+  integers; the generator rejects `int64`/`uint64` and any unknown type name.
 - **`scale`** maps physical units to integer wire steps.
 - **`min`** shifts to offset-binary so the full bit range is usable for signed
   or non-zero-based ranges. Wire offset uses `min_wire = min * scale` when
   combined with scale.
-- A fractional `scale` is only valid on a `float` field.
+- A fractional `scale` is only valid on a `float` field. `float` is supported
+  in packed structs and unions only; the generator rejects it in aligned ones.
 
 #### Memory models (scale / `raw_storage`)
 
@@ -96,7 +116,7 @@ A plain enum is encoded as its variant **index** in `ceil(log2(count))` bits. A
 compact index, with generated index↔value tables (a dense array, or a sorted
 table + binary search when the value span is large and sparse).
 
-### Composite (this work)
+### Composite types
 
 - **Nested struct** (`type: OtherStruct`): the child's layout is inlined at the
   parent's offset. Parent and child must share an encoding.

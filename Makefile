@@ -1,15 +1,15 @@
 # ProtoEmb — self-contained test + build orchestration.
 #
-# The whole library tests itself with `make test`, with no dependency on the
-# surrounding MaD monorepo. Layers:
+# The whole library tests itself with `make test`, with no dependency on any
+# repo that vendors it. Layers:
 #   test-generator   pytest over core/generate.py (schema math, layout, validation)
 #   test-conformance pytest cross-language wire conformance (C == Rust == TS)
 #   test-rust        cargo test for the framing + runtime crates
-#   verify           the example round-trip script (examples/verify.sh)
+#   verify           the example compile + round-trip script (examples/verify.sh)
 #
 # Requires on PATH: python3 (+ pyyaml, jinja2, pytest), cc, rustc/cargo, and for
-# the TypeScript leg tsc (or npx) + node. Missing TS/JS toolchains skip the TS
-# conformance leg rather than fail.
+# the TypeScript leg node + npx (which fetches a pinned TypeScript). Missing
+# TS/JS toolchains skip the TS conformance leg rather than fail.
 
 PYTHON  ?= python3
 PYTEST  ?= $(PYTHON) -m pytest
@@ -50,7 +50,7 @@ test-framing:
 test-runtime:
 	cargo test --manifest-path runtime/Cargo.toml
 
-## The example generate + round-trip + conformance shell check.
+## The example generate + compile + round-trip shell check.
 verify:
 	./examples/verify.sh
 
