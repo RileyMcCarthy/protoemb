@@ -620,7 +620,6 @@ _PRIMITIVE_TYPES = {
 _UNSUPPORTED_WIDE_TYPES = {"int64", "uint64"}
 
 
-
 def validate_unions(data, errors):
     """Validate tagged unions: variants reference known, supported types."""
     enums = data["enums"]
