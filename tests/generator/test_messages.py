@@ -37,7 +37,6 @@ def test_explicit_command_frame_overrides_inference():
     # A response+no-request would infer READ; force it to WRITE.
     m = proc({"act": message(command_id=5, response="P", command_frame="write")})["act"]
     assert m["_command_frame"] == "write"
-    assert m["_command_frame_explicit"]
 
 
 def test_async_message_without_command_id():
@@ -71,9 +70,3 @@ def test_read_and_write_lists_sorted_by_command_id():
     writes = [m["_command_id"] for m in data["runtime_write_messages"]]
     assert reads == sorted(reads)
     assert writes == sorted(writes)
-
-
-def test_payload_struct_is_linked():
-    m = proc({"get": message(command_id=0, response="P")})["get"]
-    assert m["_payload_struct"] is not None
-    assert m["_payload_struct"]["_name"] == "P"

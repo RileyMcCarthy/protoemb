@@ -28,11 +28,11 @@ def test_packed_offsets_and_wire_size():
     assert not s["_has_nested"]
 
 
-def test_packed_min_max_wire_steps():
+def test_packed_min_wire_steps():
     reading = struct(field("temp", "int16", min=-40, max=85, scale=10))
     s = process(schema(structs={"R": reading}))["structs"]["R"]
     f = fields_by_name(s)["temp"]
-    assert f["_min_wire"] == -400 and f["_max_wire"] == 850
+    assert f["_min_wire"] == -400
     assert f["_scale"] == 10 and f["_has_scale"]
 
 

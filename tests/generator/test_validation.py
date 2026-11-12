@@ -57,7 +57,56 @@ def test_union_unknown_type(capsys):
     expect_error(capsys, schema(unions={"U": u}), "references unknown type")
 
 
+def test_union_64bit_variant(capsys):
+    u = union({"name": "x", "type": "uint64"})
+    expect_error(capsys, schema(unions={"U": u}), "64-bit integers are not supported")
+
+
+def test_float_in_aligned_union(capsys):
+    u = union({"name": "g", "type": "float"}, encoding="aligned")
+    expect_error(capsys, schema(unions={"U": u}),
+                 "'float' is not supported in an aligned union")
+
+
+# ── Layout defaults ──────────────────────────────────────────────────────────
+
+def test_default_byte_and_bit_order_are_accepted():
+    s = schema(structs=PAYLOAD,
+               defaults={"byte_order": "little_endian", "bit_order": "lsb_first"})
+    validate(s)
+
+
+@pytest.mark.parametrize("key,value", [
+    ("byte_order", "big_endian"),
+    ("bit_order", "msb_first"),
+])
+def test_unsupported_order_is_rejected(key, value):
+    with pytest.raises(SystemExit, match=f"defaults.{key}.*is not supported"):
+        validate(schema(structs=PAYLOAD, defaults={key: value}))
+
+
 # ── Struct fields ────────────────────────────────────────────────────────────
+
+def test_field_unknown_type(capsys):
+    s = schema(structs={"S": struct(field("x", "wibble"))})
+    expect_error(capsys, s, "S.x: references unknown type 'wibble'")
+
+
+@pytest.mark.parametrize("ftype", ["int64", "uint64"])
+def test_field_64bit_integer(capsys, ftype):
+    s = schema(structs={"S": struct(field("big", ftype))})
+    expect_error(capsys, s, "S.big: 64-bit integers are not supported")
+
+
+def test_float_in_aligned_struct(capsys):
+    s = schema(structs={"S": struct(field("f", "float"), encoding="aligned")})
+    expect_error(capsys, s, "'float' is not supported in an aligned struct")
+
+
+def test_float_in_packed_struct_is_accepted():
+    s = schema(structs={"S": struct(field("f", "float", min=0, max=10, scale=10))})
+    validate(s)
+
 
 def test_duplicate_field_name(capsys):
     s = struct(field("x", "uint8"), field("x", "int16"))
@@ -126,16 +175,9 @@ def test_tx_node_not_in_nodes(capsys):
     expect_error(capsys, s, "is not in configured nodes")
 
 
-def test_tx_node_from_generator_config_nodes(capsys):
-    s = msg_schema({"m": message(tx_node="ghost", command_id=0, response="P")})
-    expect_error(capsys, s, "is not in configured nodes",
-                 generator_config={"nodes": ["dev"]})
-
-
-def test_generator_config_nodes_must_be_list(capsys):
-    s = msg_schema({"m": message(command_id=0, response="P")})
-    expect_error(capsys, s, "must be a list of strings",
-                 generator_config={"nodes": "dev"})
+def test_nodes_must_be_list(capsys):
+    s = msg_schema({"m": message(command_id=0, response="P")}, nodes="dev")
+    expect_error(capsys, s, "must be a list of strings")
 
 
 def test_command_id_omitted_requires_response(capsys):

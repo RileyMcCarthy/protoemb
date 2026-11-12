@@ -33,7 +33,6 @@ def test_explicit_bits_override():
 @pytest.mark.parametrize("ftype,expect", [
     ("int8", 8), ("uint8", 8), ("int16", 16), ("uint16", 16),
     ("int32", 32), ("uint32", 32), ("float", 32),
-    ("int64", 64), ("uint64", 64),
 ])
 def test_fallback_type_sizes(ftype, expect):
     assert bits({"type": ftype}) == expect
