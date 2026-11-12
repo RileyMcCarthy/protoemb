@@ -16,53 +16,6 @@ pub const SYNC_BYTE: u8 = 0x55;
 /// Maximum payload size (16-bit length field)
 pub const MAX_PAYLOAD_SIZE: usize = 4096;
 
-// ── Frame type bytes ──
-
-/// Incoming (host→device) and outgoing (device→host) frame type constants
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum FrameType {
-    /// Incoming: READ request (3 bytes, no payload)
-    /// Outgoing: NACK response (3 bytes, no payload)
-    NackOrRead = 0x00,
-    /// Incoming: WRITE request (has payload)
-    /// Outgoing: ACK response (3 bytes, no payload)
-    AckOrWrite = 0x01,
-    /// Outgoing: DATA response (has payload)
-    Data = 0x02,
-    /// Outgoing: NOTIFICATION (has payload)
-    Notification = 0x03,
-}
-
-impl FrameType {
-    pub fn from_byte(b: u8) -> Option<Self> {
-        match b {
-            0x00 => Some(Self::NackOrRead),
-            0x01 => Some(Self::AckOrWrite),
-            0x02 => Some(Self::Data),
-            0x03 => Some(Self::Notification),
-            _ => None,
-        }
-    }
-
-    /// Does this frame type carry a payload (LENGTH + DATA + CRC)?
-    pub fn has_payload(self, direction: Direction) -> bool {
-        match direction {
-            Direction::Incoming => matches!(self, Self::AckOrWrite),
-            Direction::Outgoing => matches!(self, Self::Data | Self::Notification),
-        }
-    }
-}
-
-/// Direction of communication for disambiguating frame types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
-    /// Messages coming FROM the transport (device → host)
-    Incoming,
-    /// Messages going TO the transport (host → device)
-    Outgoing,
-}
-
 // ── Parsed frame ──
 
 /// A fully parsed and validated frame
