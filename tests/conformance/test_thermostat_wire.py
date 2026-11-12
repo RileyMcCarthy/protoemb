@@ -6,10 +6,11 @@ self-checks decode(encode(v)) -> re-encode round-trips. The test asserts the
 three languages emit byte-identical wire for every vector AND that none reported
 a round-trip mismatch — a single source of truth enforced across all backends.
 
-This exercises far more than examples/verify.sh's three fixed values: packed and
-aligned layouts, scale + offset-binary, plain and remap enums (including the
-index != value case the example never tested), all union variants, nested
-structs, fixed arrays, strings, and optional present/absent.
+This is the byte-identical-wire guarantee for the example protocol
+(examples/verify.sh only checks that each target compiles and round-trips on
+its own). It covers packed and aligned layouts, scale + offset-binary, plain
+and remap enums (including the index != value case), all union variants,
+nested structs, fixed arrays, strings, and optional present/absent.
 """
 
 import os
@@ -46,7 +47,7 @@ VECTORS = [
     ("datum_fan_off", "Datum", {"channel": 1, "value": ("fan", "OFF")}),
     ("datum_fan_low", "Datum", {"channel": 2, "value": ("fan", "LOW")}),
     ("datum_fan_high", "Datum", {"channel": 4, "value": ("fan", "HIGH")}),
-    # AUTO: remap value 9 != wire index 3 — the case examples/verify.sh skips.
+    # AUTO: remap value 9 != wire index 3.
     ("datum_fan_auto", "Datum", {"channel": 5, "value": ("fan", "AUTO")}),
 
     # ZoneState: plain enum, remap enum, scaled setpoint, bool, nested Reading.

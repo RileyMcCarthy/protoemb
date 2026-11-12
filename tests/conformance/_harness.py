@@ -64,7 +64,7 @@ def build_run_c(work_dir, prefix_lower, driver_src):
         f.write(driver_src)
     exe = os.path.join(work_dir, "driver_c")
     # -Wall (no -Werror): the generated header carries `static const` remap tables
-    # that a driver may legitimately not reference (matches examples/verify.sh).
+    # that a driver may legitimately not reference.
     _run(["cc", "-std=c11", "-Wall", "-I", work_dir,
           os.path.join(work_dir, f"{prefix_lower}.c"), src, "-o", exe])
     return _run([exe]).splitlines()
