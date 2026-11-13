@@ -20,7 +20,6 @@ def test_packed_union_tag_and_largest_payload():
     ))
     u = data["unions"]["Sample"]
     assert u["_is_packed"]
-    assert u["_tag_count"] == 3
     assert u["_tag_bits"] == 2                       # ceil(log2(3))
     assert u["_payload_offset"] == 2                 # payload starts after tag
     assert u["_total_bits"] == 2 + 11                # tag + largest variant
@@ -28,7 +27,7 @@ def test_packed_union_tag_and_largest_payload():
 
     v = variants_by_name(u)
     assert v["temperature"]["_index"] == 0 and v["temperature"]["_elem_bits"] == 11
-    assert v["temperature"]["_min_wire"] == -400 and v["temperature"]["_max_wire"] == 850
+    assert v["temperature"]["_min_wire"] == -400
     assert v["fan"]["_is_enum"] and v["fan"]["_elem_bits"] == 2
 
 

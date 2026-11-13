@@ -6,7 +6,7 @@ Two layers:
   produce fresh plain-dict schemas. They are intentionally thin — the tests want
   to assert on exactly what they pass in, and `process_schema` mutates its input,
   so every test must start from a fresh dict.
-* **Pipeline wrappers** (`process`, `validate`, `expect_exit`, `generate`) drive
+* **Pipeline wrappers** (`process`, `validate`, `generate`) drive
   `generate.py` the way `main()` does, so unit tests exercise the real code path.
 """
 
@@ -94,29 +94,19 @@ def process(s, prefix="Test"):
     return gen.process_schema(copy.deepcopy(s), prefix)
 
 
-def validate(s, prefix="Test", nodes=None, generator_config=None):
-    """Mirror `main()`: process, attach nodes/config, then `validate_schema`.
+def validate(s, prefix="Test", nodes=None):
+    """Mirror `main()`: process, attach nodes, then `validate_schema`.
 
     Returns the processed `data` so callers can assert on enriched fields too.
     """
     raw = copy.deepcopy(s)
     data = gen.process_schema(raw, prefix)
     data["nodes"] = nodes if nodes is not None else raw.get("nodes", [])
-    data["generator_config"] = generator_config or {}
     gen.validate_schema(data)
     return data
 
 
-def expect_exit(fn, *args, **kwargs):
-    """Call `fn`, asserting it raises `SystemExit`; return the message string."""
-    try:
-        fn(*args, **kwargs)
-    except SystemExit as e:
-        return str(e.code)
-    raise AssertionError(f"expected SystemExit from {getattr(fn, '__name__', fn)!r}")
-
-
-def generate(schema_path, target, out_dir, prefix=None, config=None):
+def generate(schema_path, target, out_dir, prefix=None):
     """Invoke generate.py as a subprocess (the real CLI path). Returns CompletedProcess."""
     cmd = [
         sys.executable, GENERATE_PY,
@@ -127,6 +117,4 @@ def generate(schema_path, target, out_dir, prefix=None, config=None):
     ]
     if prefix:
         cmd += ["--prefix", prefix]
-    if config:
-        cmd += ["--config", str(config)]
     return subprocess.run(cmd, capture_output=True, text=True)

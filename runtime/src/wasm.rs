@@ -31,8 +31,8 @@ use crate::client::{Client, ClientConfig};
 use crate::queue::Priority;
 use crate::transport::Transport;
 
-/// Upper bound on buffered, not-yet-parsed received bytes (~256 KiB). Far above
-/// any real backlog at 230400 baud; a backstop against unbounded growth.
+/// Upper bound on buffered, not-yet-parsed received bytes (256 KiB). Far above
+/// any real backlog between two polls; a backstop against unbounded growth.
 const RX_CAP: usize = 256 * 1024;
 
 /// In-memory transport bridging the sync [`Client`] to async JS serial I/O.

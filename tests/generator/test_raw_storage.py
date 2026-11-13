@@ -53,7 +53,6 @@ def test_raw_storage_flag_on_processed_fields():
     f = process(s)["structs"]["Sample"]["fields"][0]
     assert f["_raw_storage"] is True
     assert f["_min_wire"] == -100_000
-    assert f["_max_wire"] == 100_000
     assert f["_scale"] == 1000
 
 

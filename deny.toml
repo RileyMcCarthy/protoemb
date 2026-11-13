@@ -53,11 +53,11 @@ allow = [
 confidence-threshold = 0.8
 
 # `unescaper` is GPL-3.0. It is a *transitive, Linux-only* dependency of
-# serialport 4.9.0 (pulled in via the udev enumeration path; absent on macOS,
-# Windows, and wasm). serialport 4.9.0 is the latest 4.x, so this cannot be
-# dropped without changing the runtime dependency, which is out of scope for a
-# metadata-only hardening pass. Scope the GPL allowance to this one crate so
-# the global allow-list stays permissive and the exception is explicit.
+# serialport 4.x (pulled in via the udev enumeration path; absent on macOS,
+# Windows, and wasm), still present as of the locked serialport 4.10.1, so it
+# cannot be dropped without changing the runtime dependency. Scope the GPL
+# allowance to this one crate so the global allow-list stays permissive and
+# the exception is explicit.
 exceptions = [
     { crate = "unescaper", allow = ["GPL-3.0"] },
 ]

@@ -5,7 +5,7 @@ under budget. Update when adding conformance schemas.
 
 | Command | Machine | Wall time | Notes |
 |---|---|---|---|
-| `PROTOEMB_CONFORMANCE_REQUIRE_ALL=1 python -m pytest tests -q` | local (dev) | ~10 s | 162 tests (2026-07-18) |
+| `PROTOEMB_CONFORMANCE_REQUIRE_ALL=1 python -m pytest tests -q` | local (dev) | ~10 s | measured 2026-07-18 |
 | `cargo test --manifest-path framing/Cargo.toml` | local | ~0.05 s | |
 | `cargo test --manifest-path runtime/Cargo.toml` | local | &lt;1 s | after warm cache |
 

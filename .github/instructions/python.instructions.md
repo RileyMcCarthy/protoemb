@@ -3,7 +3,7 @@ applyTo: "core/**,tests/**"
 ---
 
 Python (protocol code generator + test suite). Lint config: `ruff.toml` at the
-repo root. Target Python 3.9 (`core/pyproject.toml`).
+repo root. Target Python 3.9 (`target-version` in `ruff.toml`).
 
 Focus on what ruff can't decide:
 - the generator's error-handling model (accumulate errors, then report;

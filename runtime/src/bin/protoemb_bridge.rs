@@ -1,7 +1,7 @@
 //! Standard ProtoEmb bridge binary.
 //!
 //! Runs the generic NDJSON stdio bridge from `protoemb-runtime`.
-//! A host application (e.g. an Electron app) spawns this process and
+//! A host application (e.g. a desktop app) spawns this process and
 //! communicates over newline-delimited JSON on stdin/stdout.
 //!
 //! `PROTOEMB_BRIDGE_RESPONSE_TIMEOUT_MS` overrides the request/response

@@ -77,7 +77,7 @@ def test_custom_prefix_renames_files_and_symbols(tmp_path):
 @pytest.mark.parametrize("target", TARGETS)
 def test_mad_protocol_generates(tmp_path, target):
     if not os.path.exists(MAD_PROTOCOL):
-        pytest.skip("MaDProtocol.yaml not present (library split out)")
+        pytest.skip("MaDProtocol.yaml not present (only there when vendored at MaD/Protocol/ProtoEmb)")
     r = generate(MAD_PROTOCOL, target, tmp_path / target)
     assert r.returncode == 0, r.stderr
     assert any((tmp_path / target).iterdir())

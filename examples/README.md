@@ -24,5 +24,8 @@ A smart-thermostat protocol that uses:
 ./verify.sh
 ```
 
-Generates the protocol into C, Rust, and TypeScript and checks each one
-compiles / typechecks / round-trips. Nothing MaD-specific is required.
+Generates the protocol into C, Rust, and TypeScript and checks each one: the C
+compiles, the Rust passes its generated round-trip tests, the TypeScript
+typechecks. Nothing MaD-specific is required. That the three targets put the
+same bytes on the wire is checked by the vector-driven suite in
+[`tests/conformance/`](../tests/conformance/) (`make test-conformance`).
